@@ -1,0 +1,7 @@
+*.pdf
+*.csv
+*.json
+*.txt
+.RData
+.DS_Store
+.Rhistory

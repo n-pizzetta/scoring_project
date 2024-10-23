@@ -2,8 +2,10 @@
 *.csv
 *.json
 *.txt
+*.xlsx
 *.rds
 .RData
 .DS_Store
 .Rhistory
 wrds_data/
+default_data/

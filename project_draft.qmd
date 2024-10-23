@@ -15,6 +15,8 @@ format:
     self-contained: true
     code-tools:
       source: true
+execute:
+  cache: true
 editor: 
     markdown: 
        wrap: sentence
@@ -54,5 +56,20 @@ funda_db %>%
          EBTA = ebit / at,
          TLTA  = lt / at, # as a proxy for ME/TL
          SLTA = sale / at)
+```
+
+# Building our dataset
+
+## Building Y
+
+```{r}
+# Load Data
+company_db <- readRDS("./wrds_data/company_all.rds")
+
+# Extract relevant company information
+compustat_company_data <- company_db %>%
+    select(gvkey, conm, dlrsn, dldte) %>%
+    filter(dlrsn %in% c("02", "03")) %>%  # Bankruptcy (02) or liquidation (03)
+    collect()
 ```
 

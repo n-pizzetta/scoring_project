@@ -1,7 +1,7 @@
 ---
 title: "Project"
 subtitle: "Scoring, M2 Data Science for Social Sciences"
-author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigur Saue"
+author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd/Zizigur Saue"
 format: 
   html:
     theme: 
@@ -21,7 +21,7 @@ editor:
 ---
 
 
-```{r}
+```{r, eval=FALSE}
 library(tidyverse)
 library(dbplyr)
 library(RPostgres)

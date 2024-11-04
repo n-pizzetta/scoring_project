@@ -1,0 +1,165 @@
+---
+title: "Project"
+subtitle: "Scoring, M2 Data Science for Social Sciences"
+author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd/Zizigur Saue"
+format: 
+  html:
+    theme: 
+       light: cerulean
+    code-fold: true
+    warning: false
+    message: false
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    self-contained: true
+    code-tools:
+      source: true
+execute:
+  cache: true
+editor: 
+    markdown: 
+       wrap: sentence
+---
+
+
+```{r, eval=FALSE}
+library(tidyverse)
+library(dbplyr)
+library(RPostgres)
+# First create two environment variables to connect wrds
+# in a terminal: touch $HOME/.Renviron
+# inside the .Renviron file
+# wrds_user = your_user
+# wrds_password = your_password
+
+wrds <- dbConnect(
+    Postgres(),
+    host = "wrds-pgdata.wharton.upenn.edu",
+    dbname = "wrds",
+    port = 9737,
+    sslmode = "require",
+    user = Sys.getenv("wrds_user"),
+    password = Sys.getenv("wrds_password")
+)
+
+compustat_list <- dbListObjects(wrds, Id(schema = "comp"))
+
+# Use dplyr verbs with a remote database table
+# https://dbplyr.tidyverse.org/reference/tbl.src_dbi.html
+funda_db <- tbl(wrds, in_schema("comp", "funda"))
+funda_db %>%
+  filter(grepl('APPLE INC', conm)) %>%
+  select(gvkey, fyear, conm, at, wcap, re, ebit, lt, sale) %>%
+  mutate(WCTA = wcap / at,
+         RETA = re / at,
+         EBTA = ebit / at,
+         TLTA  = lt / at, # as a proxy for ME/TL
+         SLTA = sale / at)
+```
+
+# Building our dataset
+
+## Building Y
+
+::: panel-tabset
+
+### comp.company
+
+```{r}
+# Construct the file path in a way that works on both macOS and Windows
+file_path <- file.path("wrds_data", "company_all.rds")
+
+# Check if the file exists and read the Excel file
+if (file.exists(file_path)) {
+  company_db <- readRDS(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+
+# Extract relevant company information
+compustat_company_data <- company_db %>%
+    select(gvkey, conm, dlrsn, dldte) %>% # 
+    filter(dlrsn %in% c("02", "03")) %>%  # Bankruptcy (02) or liquidation (03)
+    collect()
+
+print(compustat_company_data)
+```
+
+
+### LoPuki
+
+```{r}
+# Construct the file path in a way that works on both macOS and Windows
+file_path <- file.path("default_data", "Bankruptcy - LoPucki", "Florida-UCLA-LoPucki Bankruptcy Research Database 1-12-2023.xlsx")
+
+# Check if the file exists and read the Excel file
+if (file.exists(file_path)) {
+  lopucki <- readxl::read_xlsx(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+
+# Filter for Chapter 7 (liquidation) and Chapter 11 (reorganization) bankruptcies
+lopucki_clean <- lopucki_db %>%
+    filter(Chapter %in% c("7", "11")) %>%
+    filter(Disposition != "Chapter 7 at filing") %>% # Exclude Chapter 7 at filing as advised in the do file of the dataset
+    select(GvkeyBefore, DateFiled, NameCorp, Chapter) %>%
+    group_by(GvkeyBefore) %>%
+    summarize(DateFiled = min(DateFiled),
+              NameCorp = NameCorp[which.min(DateFiled)],
+              Chapter = Chapter[which.min(DateFiled)]) %>% 
+    mutate(DateFiled = lubridate::as_date(DateFiled)) %>% 
+    ungroup()
+
+print(lopucki_clean)
+
+```
+
+
+:::
+
+
+```{r}
+compustat_all <- readRDS("./wrds_data/compustat_all_light.rds")
+# compustat_all <- readRDS("./wrds_data/compustat_all.rds") # uncomment for full data
+
+
+# Select relevant financial metrics and compute financial ratios
+financial_data <- compustat_all %>%
+    select(gvkey, fyear, conm, at, wcap, re, ebit, lt, sale) %>%
+    mutate(
+        WCTA = wcap / at,  # Working Capital to Total Assets
+        RETA = re / at,     # Retained Earnings to Total Assets
+        EBTA = ebit / at,   # EBIT to Total Assets
+        TLTA = lt / at,     # Total Liabilities to Total Assets
+        SLTA = sale / at    # Sales to Total Assets
+    ) %>%
+    collect()  # Collect data into an R data frame
+```
+
+
+```{r}
+# Merge Compustat and LoPucki data based on gvkey (Compustat) and GvkeyBefore (LoPucki)
+bankruptcy_data <- compustat_company_data %>%
+    full_join(lopucki_clean, by = c("gvkey" = "GvkeyBefore"))
+
+# Inspect the combined dataset
+print(bankruptcy_data)
+```
+
+```{r}
+# Create the target variable Y based on whether a company defaulted within 1 year of the fiscal year
+financial_data <- financial_data %>%
+    left_join(bankruptcy_data, by = "gvkey") %>%
+    mutate(
+        # If the bankruptcy date (from either source) falls within 1 year after the fiscal year end, mark as 1
+        Y = ifelse((!is.na(dldte) & (fyear + 1 == year(dldte))) | 
+                   (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))), 1, 0)
+    )
+
+# Check the output to confirm that the target variable is correctly assigned
+print(financial_data)
+```
+
+

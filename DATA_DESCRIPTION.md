@@ -45,12 +45,15 @@ This dataset contains daily stock market data for each company, sourced from CRS
 This dataset provides information on bankruptcy events for each company, derived from both Compustat and LoPucki’s Bankruptcy Database.
 
 - **gvkey**: Unique identifier for each company in Compustat.
-- **Disposition**: Reason for bankruptcy (e.g., “Chapter 7 at filing”) in LoPucki.
-- **Chapter**: The chapter of the bankruptcy code under which the case proceeded (`7` for liquidation, `11` for reorganization) in LoPucki.
-- **DateFiled**: Date the bankruptcy case was filed in LoPucki.
-- **conm**: Company name in LoPucki.
+- **conm**: Company name in Computstat.
 - **dlrsn**: Deletion reason (`2` for bankruptcy, `3` for liquidation) in Compustat.
 - **dldte**: Deletion date (if applicable) in Compustat.
+- **DateFiled**: Date the bankruptcy case was filed in LoPucki.
+- **Disposition**: Reason for bankruptcy (e.g., “Chapter 7 at filing”) in LoPucki.
+- **NameCorp**: Company name in Lopucki.
+- **Chapter**: The chapter of the bankruptcy code under which the case proceeded (`7` for liquidation, `11` for reorganization) in LoPucki.
+
+
 
 ### 4. Link Table (`link_table.csv`)
 This table links identifiers between Compustat and CRSP to enable merging of financial and market data for each company.
@@ -65,7 +68,7 @@ This table links identifiers between Compustat and CRSP to enable merging of fin
 - **Compustat**: Source of financial data, including balance sheets and income statements.
 - **CRSP**: Source of stock market data, including daily prices, returns, and trading volume.
 - **LoPucki Bankruptcy Database**: Source for detailed bankruptcy filing information, including type and date of filing.
-- **Moody**: 
+- **Moody's Annual Default Reports**: Source for detailed analysis of corporate bond defaults and credit rating changes.
 
 ## Usage Notes
 1. **Merging Datasets**: Use `gvkey` and `permno` from the **Link Table** to join financial data with market data.

@@ -1,7 +1,7 @@
 ---
 title: "Project"
 subtitle: "Scoring, M2 Data Science for Social Sciences"
-author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd/Zizigur Saue"
+author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd Saue"
 format: 
   html:
     theme: 
@@ -22,16 +22,44 @@ editor:
        wrap: sentence
 ---
 
+# Context
+
+In this project, the objective is to develop a predictive model for corporate bankruptcy, utilizing historical financial and default data. Companies may encounter various forms of financial distress, such as missed payments, distressed exchanges, or formal bankruptcy proceedings like Chapter 7 and Chapter 11 filings. By analyzing these events and their associated financial indicators, this project aims to build a dataset that captures each company’s fiscal health over time and leverages machine learning to forecast the likelihood of default.
+
+The work involves combining multiple datasets—Compustat, LoPucki, and Moody’s—which each track different aspects of corporate financial distress. After careful preprocessing to align and clean the data, the most recent financial and default indicators for each company are extracted. These serve as the target variable $Y$ for bankruptcy risk, which will later be matched with a comprehensive feature set $X$ to train the predictive model. This analysis aims to provide insights into the patterns that precede default and to contribute a robust tool for assessing bankruptcy risk in real-world scenarios.
+
+
+# Building our dataset
+
+In this section we will focus on building our target variable $Y$ for bankruptcy prediction and our feature set $X$ for training the predictive model.
+
+
+## Building Y - Bankruptcy Data
+
+To build our target variable we will go through the following steps:
+
+1. Extracting the relevant data from the Compustat, LoPucki, and Moody’s datasets.
+2. Merging these datasets to create a comprehensive dataset that captures the financial health and default history of each company.
+3. Creating the target variable $Y$ based on bankruptcy events within 1 year of each fiscal year.
+4. Selecting the most recent fiscal year for each company to use as the target variable dataset.
+
+
+::: panel-tabset
+
+### Compustat - Company
+
+The Compustat database contains detailed financial information for a wide range of companies. We will extract the company name, gvkey, reason for deletion, and deletion date from the Compustat database.
+
+:::::: {.callout-note collapse="true"}
+
+#### WRDS Connection
+
+*Example of code to connect to WRDS database and extract data from Compustat database*
 
 ```{r, eval=FALSE}
 library(tidyverse)
 library(dbplyr)
 library(RPostgres)
-# First create two environment variables to connect wrds
-# in a terminal: touch $HOME/.Renviron
-# inside the .Renviron file
-# wrds_user = your_user
-# wrds_password = your_password
 
 wrds <- dbConnect(
     Postgres(),
@@ -58,17 +86,15 @@ funda_db %>%
          SLTA = sale / at)
 ```
 
-# Building our dataset
+::::::
 
-## Building Y
 
-::: panel-tabset
+```{r Importing Computstat Company Data}
+library(dplyr)
+source("../scripts/helper_functions.R")
 
-### comp.company
-
-```{r}
 # Construct the file path in a way that works on both macOS and Windows
-file_path <- file.path("wrds_data", "company_all.rds")
+file_path <- file.path("..", "data", "wrds_data", "company_all.rds")
 
 # Check if the file exists and read the Excel file
 if (file.exists(file_path)) {
@@ -79,23 +105,54 @@ if (file.exists(file_path)) {
 
 # Extract relevant company information
 compustat_company_data <- company_db %>%
-    select(gvkey, conm, dlrsn, dldte) %>% # 
-    filter(dlrsn %in% c("02", "03")) %>%  # Bankruptcy (02) or liquidation (03)
+    select(gvkey, conm, dlrsn, dldte) %>%
     collect()
 
-print(compustat_company_data)
+styled_dt(compustat_company_data)
 ```
 
 
-### LoPuki
+### Compustat - Fiscal Year
 
-```{r}
+Extracting the fiscal year of the companies from the Compustat database.
+
+```{r Importing Computstat Fiscal Year, cache=TRUE, cache.lazy=FALSE}
 # Construct the file path in a way that works on both macOS and Windows
-file_path <- file.path("default_data", "Bankruptcy - LoPucki", "Florida-UCLA-LoPucki Bankruptcy Research Database 1-12-2023.xlsx")
+file_path <- file.path("..", "data", "wrds_data", "compustat_all.rds")
 
 # Check if the file exists and read the Excel file
 if (file.exists(file_path)) {
-  lopucki <- readxl::read_xlsx(file_path)
+  compustat_all <- readRDS(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+
+# Select relevant financial metrics and compute financial ratios
+fiscal_year <- compustat_all %>%
+    select(gvkey, fyear)
+
+# Step 1: Identify the last fiscal year for each gvkey
+fiscal_year <- fiscal_year %>%
+    group_by(gvkey) %>%
+    filter(fyear == max(fyear)) %>%
+    ungroup()
+
+
+styled_dt(fiscal_year)
+```
+
+
+### LoPucki
+
+Extracting bankruptcy data from the LoPucki dataset. We will filter for Chapter 7 (liquidation) and Chapter 11 (reorganization) bankruptcies.
+
+```{r Importing LoPucki Data}
+# Construct the file path in a way that works on both macOS and Windows
+file_path <- file.path("..","data", "default_data", "Bankruptcy - LoPucki", "Florida-UCLA-LoPucki Bankruptcy Research Database 1-12-2023.xlsx")
+
+# Check if the file exists and read the Excel file
+if (file.exists(file_path)) {
+  lopucki_db <- readxl::read_xlsx(file_path)
 } else {
   print("File not found. Please check the file path.")
 }
@@ -112,54 +169,148 @@ lopucki_clean <- lopucki_db %>%
     mutate(DateFiled = lubridate::as_date(DateFiled)) %>% 
     ungroup()
 
-print(lopucki_clean)
-
+styled_dt(lopucki_clean)
 ```
 
+
+### Moody
+
+Here we use the dataset Moody to create a better filter on the dataset comp.company. Because a lot of companies are deleted from Compustat Database for a different reason than credit (Acquisitions, Other) but are in fact defaulting companies in Moody's dataset.
+
+```{r Importing Moody_s Data}
+# Construct the file path in a way that works on both macOS and Windows
+file_path <- file.path("..","data", "default_data", "dat_default_moodys_annual.rds")
+
+# Check if the file exists and read the Excel file
+if (file.exists(file_path)) {
+  moody_db <- readRDS(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+
+moody_clean <- moody_db %>%
+    select(company_name, default_type, default_date)
+
+# Inspect the best matches
+styled_dt(moody_clean)
+```
 
 :::
 
 
-```{r}
-compustat_all <- readRDS("./wrds_data/compustat_all_light.rds")
-# compustat_all <- readRDS("./wrds_data/compustat_all.rds") # uncomment for full data
 
+### Merging Datasets
 
-# Select relevant financial metrics and compute financial ratios
-financial_data <- compustat_all %>%
-    select(gvkey, fyear, conm, at, wcap, re, ebit, lt, sale) %>%
-    mutate(
-        WCTA = wcap / at,  # Working Capital to Total Assets
-        RETA = re / at,     # Retained Earnings to Total Assets
-        EBTA = ebit / at,   # EBIT to Total Assets
-        TLTA = lt / at,     # Total Liabilities to Total Assets
-        SLTA = sale / at    # Sales to Total Assets
-    ) %>%
-    collect()  # Collect data into an R data frame
-```
+::: panel-tabset
 
+#### Compustat (comp.company) and LoPucki
 
-```{r}
+To merge the Compustat and LoPucki datasets, we will use the gvkey (Compustat) and GvkeyBefore (LoPucki) columns as the key for merging.
+
+```{r Merging Compustat and LoPucki Data}
 # Merge Compustat and LoPucki data based on gvkey (Compustat) and GvkeyBefore (LoPucki)
-bankruptcy_data <- compustat_company_data %>%
-    full_join(lopucki_clean, by = c("gvkey" = "GvkeyBefore"))
+comp_lopucki <- compustat_company_data %>%
+    left_join(lopucki_clean, by = c("gvkey" = "GvkeyBefore"))
 
 # Inspect the combined dataset
-print(bankruptcy_data)
+styled_dt(comp_lopucki)
 ```
 
-```{r}
-# Create the target variable Y based on whether a company defaulted within 1 year of the fiscal year
-financial_data <- financial_data %>%
-    left_join(bankruptcy_data, by = "gvkey") %>%
+
+#### Comp_lopucki with Moody
+
+To manage to merge the Moody's dataset with the Compustat dataset, we need to standardize the company names in both datasets. We will remove punctuation, whitespace, and common company suffixes to create a common key for merging.
+
+```{r Merging Compustat-LoPucki and Moody_s Data}
+# Standardize company names in both datasets
+trim_pattern <- ",|\\.|INC|LLC|CORPORATION|CORP|COMPANY|\\*|\\s+"
+
+# Clean Moody's data
+moody_clean <- moody_clean %>%
     mutate(
-        # If the bankruptcy date (from either source) falls within 1 year after the fiscal year end, mark as 1
-        Y = ifelse((!is.na(dldte) & (fyear + 1 == year(dldte))) | 
-                   (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))), 1, 0)
+        compact_name = stringr::str_to_upper(company_name),
+        compact_name = stringr::str_trim(gsub(trim_pattern, "", compact_name))
+        )
+
+# Clean Compustat company data
+comp_lopucki <- comp_lopucki %>%
+    mutate(compact_name = stringr::str_trim(gsub(trim_pattern, "", conm))
+           )
+
+comp_lopucki_moody <- comp_lopucki %>%
+                    left_join(moody_clean, by = c("compact_name")) %>%
+                    filter(!is.na(gvkey)) %>%
+                    select(gvkey, conm, dlrsn, dldte, DateFiled, Chapter, default_date, default_type)
+
+
+styled_dt(comp_lopucki_moody)
+```
+
+#### Comp_lopucki_moody with Fiscal Year
+
+Here, we will merge the combined dataset with the fiscal year data to create a comprehensive dataset that captures the financial health and default history of each company. The Y variable will be created based on bankruptcy events within 1 year of each fiscal year, information like Chapter 7 and Chapter 11 bankruptcies from LoPucki, Moody's default and Computstat deletion date and reason.
+
+```{r Merging Compustat-LoPucki-Moody and Fiscal Year}
+library(lubridate)
+
+# Merge financial data with the complete bankruptcy data
+bankruptcy_data <- comp_lopucki_moody %>%
+    left_join(fiscal_year, by = "gvkey") %>%
+    mutate(
+        # Define target variable Y based on bankruptcy events within 1 year of each fiscal year
+        Y = ifelse(
+            # Compustat bankruptcy within 1 year after fiscal year
+            (!is.na(dldte) & dlrsn %in% c("02", "03") & (fyear + 1 == year(dldte))) |
+            # LoPucki bankruptcy within 1 year after fiscal year
+            (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))) | (!is.na(Chapter) & Chapter %in% c("7", "11")) |
+            # Moody's default within 1 year after fiscal year
+            grepl("Bankruptcy", default_type, ignore.case = TRUE) | grepl("Chapter 11", default_type, ignore.case = TRUE),      
+            1, 
+            0
+        )
     )
 
-# Check the output to confirm that the target variable is correctly assigned
-print(financial_data)
+styled_dt(bankruptcy_data)
 ```
+
+:::
+
+
+### Extracting target Y from Bankruptcy Data
+
+Finally, we will extract the most recent fiscal year for each company to use as the target variable dataset. The objective is to keep only the most recent information for each company to predict bankruptcy risk.
+
+```{r Extracting Target Y from Bankruptcy Data}
+# Keep only the most recent fiscal year for each gvkey
+latest_data <- bankruptcy_data %>%
+    group_by(gvkey) %>%
+    filter(fyear == max(fyear)) %>% # Keep only the row with the latest fiscal year
+    ungroup()
+
+# Select only gvkey and Y columns to use as the target variable dataset
+target_Y <- latest_data %>%
+    select(gvkey, Y)
+
+# Display the target_Y dataset for verification
+styled_dt(target_Y)
+```
+
+**Summary of the target variable $Y$ for bankruptcy prediction:**
+
+```{r Summary of Target Y}
+# Count the number of bankrupt companies
+n_bankrupt <- sum(target_Y$Y)
+n_non_bankrupt <- nrow(target_Y) - n_bankrupt
+
+# Display the number of bankrupt and non-bankrupt companies
+cat("Number of bankrupt companies: ", n_bankrupt, "\n")
+cat("Number of non-bankrupt companies: ", n_non_bankrupt, "\n")
+
+# Display the proportion of bankrupt companies
+cat("Proportion of bankrupt companies: ", round(n_bankrupt / nrow(target_Y), 3), "\n")
+cat("Proportion of non-bankrupt companies: ", round(n_non_bankrupt / nrow(target_Y), 3), "\n")
+
+```
+
 
 

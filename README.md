@@ -1,4 +1,6 @@
 # Project Title: Bankruptcy Prediction Model
+![R](https://img.shields.io/badge/r-%23276DC3.svg?style=for-the-badge&logo=r&logoColor=white)
+![Markdown](https://img.shields.io/badge/markdown-%23000000.svg?style=for-the-badge&logo=markdown&logoColor=white)
 
 ## Overview
 This project aims to predict corporate bankruptcy using financial and market data. The dataset combines firm-level financial metrics, market data, and bankruptcy events to build a predictive model that classifies companies as likely to default or remain solvent.
@@ -25,5 +27,5 @@ For more information on the datasets created and used in this project, refer to 
 
 We created our features and target variable using different sources from WRDS, Lopucki and Moody's reports.<br>
 You can check our reports on the following links :
-- [Building our target Y](https://n-pizzetta.github.io/scoring_project/dataset_build.html)
+- [Building our target Y](https://n-pizzetta.github.io/scoring_project/reports/dataset_build.html)
 - [Building our features]

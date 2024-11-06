@@ -4,8 +4,9 @@
 *.txt
 *.xlsx
 *.rds
+*.rdx
 .RData
 .DS_Store
 .Rhistory
-wrds_data/
-default_data/
+data/
+dataset_build_cache/

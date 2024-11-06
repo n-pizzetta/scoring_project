@@ -1,5 +1,5 @@
 # Function to format the dataframes displayed
-styled_dt <- function(df, n=10) {
+styled_dt <- function(df, n=5) {
   DT::datatable(df, 
                 extensions = 'Buttons',
                 rownames = FALSE,

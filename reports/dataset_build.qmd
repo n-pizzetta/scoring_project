@@ -49,8 +49,9 @@ To build our target variable we will go through the following steps:
 ::: panel-tabset
 ### Compustat - Company
 
-The Compustat database contains detailed financial information for a wide range of companies.
-We will extract the company name, gvkey, reason for deletion, and deletion date from the Compustat database.
+The comp.company database contains some information for a wide range of companies: address, phone number, website url, ...<br>
+For our analysis we are interested in the deletion date and the deletion reason which gives us potential information about companies that could have been bankrupted.<br>
+To do so, we will extract the company name, the key, the reason for deletion, and the deletion date.
 
 ::: {.callout-note collapse="true"}
 #### WRDS Connection
@@ -90,6 +91,7 @@ funda_db %>%
 
 ```{r Importing Computstat Company Data}
 library(dplyr)
+library(lubridate)
 source("../scripts/helper_functions.R")
 
 # Construct the file path in a way that works on both macOS and Windows
@@ -104,6 +106,7 @@ if (file.exists(file_path)) {
 
 # Extract relevant company information
 compustat_company_data <- company_db %>%
+    filter(is.na(dldte) | (year(dldte) >= "2011")) %>% 
     select(gvkey, conm, dlrsn, dldte) %>%
     collect()
 
@@ -112,7 +115,8 @@ styled_dt(compustat_company_data)
 
 ### Compustat - Fiscal Year
 
-Extracting the fiscal year of the companies from the Compustat database.
+This dataset is key because it links the fiscal year with the financial data. To use it porperly we will try to keep all the companies where we can be confident if they were bankrupt or not. The objective of predicting a company bankruptcy on the next year relies on the ongoing fiscal year, it is therefore necessary to have it for all our companies in our dataset.
+
 
 ```{r Importing Computstat Fiscal Year, cache=TRUE, cache.lazy=FALSE}
 # Construct the file path in a way that works on both macOS and Windows
@@ -127,22 +131,24 @@ if (file.exists(file_path)) {
 
 # Select relevant financial metrics and compute financial ratios
 fiscal_year <- compustat_all %>%
+    filter(fyear >= "2010") %>% 
     select(gvkey, fyear)
 
-# Step 1: Identify the last fiscal year for each gvkey
-fiscal_year <- fiscal_year %>%
-    group_by(gvkey) %>%
-    filter(fyear == max(fyear)) %>%
-    ungroup()
+fy_size <- fiscal_year %>% group_by(gvkey) %>% filter(fyear==max(fyear)) %>% dim
 
-
-styled_dt(fiscal_year)
+cat("Number of companies within this period of time :", fy_size[1])
 ```
+
+
 
 ### LoPucki
 
-Extracting bankruptcy data from the LoPucki dataset.
-We will filter for Chapter 7 (liquidation) and Chapter 11 (reorganization) bankruptcies.
+Lopucki database includes approximately one thousand large public company bankruptcies filed in the United States Bankruptcy Courts under Chapter 7 or Chapter 11 since October 1, 1979 to December 11, 2022.<br>
+
+- **Chapter 7 :** liquidation
+- **Chapter 11 :** reorganization
+
+We will extract the company name, the key, the filling date, and the chapter.
 
 ```{r Importing LoPucki Data}
 # Construct the file path in a way that works on both macOS and Windows
@@ -157,9 +163,8 @@ if (file.exists(file_path)) {
 
 # Filter for Chapter 7 (liquidation) and Chapter 11 (reorganization) bankruptcies
 lopucki_clean <- lopucki_db %>%
-    filter(Chapter %in% c("7", "11")) %>%
-    filter(Disposition != "Chapter 7 at filing") %>% # Exclude Chapter 7 at filing as advised in the do file of the dataset
-    select(GvkeyBefore, DateFiled, NameCorp, Chapter) %>%
+    filter((Chapter %in% c("7", "11")) & (Disposition != "Chapter 7 at filing") & (year(DateFiled) >= "2011")) %>%  # Exclude Chapter 7 at filing as advised in the do file of the dataset
+    select(GvkeyBefore, NameCorp, DateFiled, Chapter) %>%
     group_by(GvkeyBefore) %>%
     summarize(DateFiled = min(DateFiled),
               NameCorp = NameCorp[which.min(DateFiled)],
@@ -172,8 +177,11 @@ styled_dt(lopucki_clean)
 
 ### Moody
 
-Here we use the dataset Moody to create a better filter on the dataset comp.company.
-Because a lot of companies are deleted from Compustat Database for a different reason than credit (Acquisitions, Other) but are in fact defaulting companies in Moody's dataset.
+Moody’s Annual Default Reports for Corporates provide detailed analysis of corporate bond defaults and credit rating changes. These reports track default rates, recovery rates, and rating transitions for companies around the world.<br>
+
+Data was extracted from Moody’s Annual reports covering Corporate Default starting in 2002, it is more heterogeneous than LoPucki and not directly linkable to Compustat since only the name of the company is reported, also depending on the year, either full date, the month or nothing is reported regarding the default/bankruptcy event.<br>
+
+What is interesting for us with this dataset, is that a lot of companies are deleted from comp.company for a different reason than credit (Acquisitions, Other) but are in fact defaulting companies in Moody's dataset.
 
 ```{r Importing Moody_s Data}
 # Construct the file path in a way that works on both macOS and Windows
@@ -187,6 +195,7 @@ if (file.exists(file_path)) {
 }
 
 moody_clean <- moody_db %>%
+    filter(year(default_date) >= "2011") %>% 
     select(company_name, default_type, default_date)
 
 # Inspect the best matches
@@ -196,8 +205,8 @@ styled_dt(moody_clean)
 
 ### Merging Datasets
 
-::: panel-tabset
-#### Compustat and LoPucki
+
+**Compustat and LoPucki**<br>
 
 To merge the Compustat and LoPucki datasets, we will use the gvkey (Compustat) and GvkeyBefore (LoPucki) columns as the key for merging.
 
@@ -205,12 +214,9 @@ To merge the Compustat and LoPucki datasets, we will use the gvkey (Compustat) a
 # Merge Compustat and LoPucki data based on gvkey (Compustat) and GvkeyBefore (LoPucki)
 comp_lopucki <- compustat_company_data %>%
     left_join(lopucki_clean, by = c("gvkey" = "GvkeyBefore"))
-
-# Inspect the combined dataset
-styled_dt(comp_lopucki)
 ```
 
-#### Comp_lopucki with Moody
+**Comp_lopucki with Moody**<br>
 
 To manage to merge the Moody's dataset with the Compustat dataset, we need to standardize the company names in both datasets.
 We will remove punctuation, whitespace, and common company suffixes to create a common key for merging.
@@ -235,39 +241,67 @@ comp_lopucki_moody <- comp_lopucki %>%
                     left_join(moody_clean, by = c("compact_name")) %>%
                     filter(!is.na(gvkey)) %>%
                     select(gvkey, conm, dlrsn, dldte, DateFiled, Chapter, default_date, default_type)
-
-
-styled_dt(comp_lopucki_moody)
 ```
 
-#### Comp_lopucki_moody with Fiscal Year
+**Comp_lopucki_moody with Fiscal Year**<br>
 
-Here, we will merge the combined dataset with the fiscal year data to create a comprehensive dataset that captures the financial health and default history of each company.
+Here, we will merge the combined dataset with the fiscal year data to create a comprehensive dataset that captures the financial health and default history of each company.<br>
+
 The Y variable will be created based on bankruptcy events within 1 year of each fiscal year, information like Chapter 7 and Chapter 11 bankruptcies from LoPucki, Moody's default and Computstat deletion date and reason.
 
 ```{r Merging Compustat-LoPucki-Moody and Fiscal Year}
-library(lubridate)
-
 # Merge financial data with the complete bankruptcy data
-bankruptcy_data <- comp_lopucki_moody %>%
-    left_join(fiscal_year, by = "gvkey") %>%
+bankruptcy_data <-fiscal_year %>%
+    left_join(comp_lopucki_moody, by = "gvkey") %>%
     mutate(
         # Define target variable Y based on bankruptcy events within 1 year of each fiscal year
         Y = ifelse(
             # Compustat bankruptcy within 1 year after fiscal year
             (!is.na(dldte) & dlrsn %in% c("02", "03") & (fyear + 1 == year(dldte))) |
             # LoPucki bankruptcy within 1 year after fiscal year
-            (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))) | (!is.na(Chapter) & Chapter %in% c("7", "11")) |
+            (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))) |
             # Moody's default within 1 year after fiscal year
-            grepl("Bankruptcy", default_type, ignore.case = TRUE) | grepl("Chapter 11", default_type, ignore.case = TRUE),      
+            (!is.na(default_date) & (grepl("Bankruptcy", default_type, ignore.case = TRUE) | grepl("Chapter 11", default_type, ignore.case = TRUE)) & (fyear + 1 == year(default_date))),      
             1, 
             0
         )
     )
-
-styled_dt(bankruptcy_data)
 ```
-:::
+
+### Cleaning Bankruptcy Dataset
+
+In our dataset, some companies went bankrupt at some year. But then, they are still in the dataset for the following years. For these companies, we need to delete the years following the bankruptcy year.
+
+```{r Cleaning Bankruptcy Dataset I}
+# Identify bankruptcy years for each company
+bankrupt_years <- bankruptcy_data %>%
+  filter(Y == 1) %>%
+  select(gvkey, bankruptcy_fyear = fyear)
+
+# Join bankruptcy years back to the original data
+bankruptcy_data_cleaned <- bankruptcy_data %>%
+  left_join(bankrupt_years, by = "gvkey") %>%
+  # Keep rows where either there is no bankruptcy year or fyear is less than or equal to bankruptcy year
+  filter(is.na(bankruptcy_fyear) | fyear <= bankruptcy_fyear) %>%
+  select(-bankruptcy_fyear)
+```
+
+
+We already have well specified the companies that went bankrupt, but we need to clean the dataset to keep only the most relevant "non bankrupt" companies.<br>
+
+To do so, we will look at the reason of deletion for the companies that are not bankrupt and delete the companies with a deletion reason that cannot tells us if they went bankrupt.<br> 
+
+For example, a company deleted for the reason "Acquisition or merger" should be keep in the dataset since it is not a bankruptcy reason. But, a company 
+
+
+```{r Cleaning Bankruptcy Dataset II}
+# Remove rows for companies with no bankruptcies and specific dlrsn values
+bankruptcy_data_cleaned <- bankruptcy_data_cleaned %>%
+  group_by(gvkey) %>%
+  filter(!(sum(Y) == 0 & dlrsn %in% c(05, 10, 07))) %>%
+  ungroup()
+```
+
 
 ### Extracting target Y from Bankruptcy Data
 
@@ -276,10 +310,10 @@ The objective is to keep only the most recent information for each company to pr
 
 <br>
 
-**Bankruptcy Dataset:**
+**Final Bankruptcy Dataset:**
 
 ```{r Visualizing Bankruptcy Data}
-styled_dt(bankruptcy_data)
+styled_dt(bankruptcy_data_cleaned)
 ```
 
 <br>
@@ -287,18 +321,9 @@ styled_dt(bankruptcy_data)
 **Target Y:**
 
 ```{r Extracting Target Y from Bankruptcy Data}
-# Keep only the most recent fiscal year for each gvkey
-latest_data <- bankruptcy_data %>%
-    group_by(gvkey) %>%
-    filter(fyear == max(fyear)) %>% # Keep only the row with the latest fiscal year
-    ungroup()
-
 # Select only gvkey and Y columns to use as the target variable dataset
-target_Y <- latest_data %>%
-    select(gvkey, Y)
-
-# Display the target_Y dataset for verification
-print(target_Y)
+target_Y <- bankruptcy_data_cleaned %>%
+    select(gvkey, fyear, Y)
 ```
 
 <br>
@@ -311,11 +336,24 @@ n_bankrupt <- sum(target_Y$Y)
 n_non_bankrupt <- nrow(target_Y) - n_bankrupt
 
 # Display the number of bankrupt and non-bankrupt companies
-cat("Number of bankrupt companies: ", n_bankrupt, "\n")
-cat("Number of non-bankrupt companies: ", n_non_bankrupt, "\n")
-
-# Display the proportion of bankrupt companies
-cat("Proportion of bankrupt companies: ", round(n_bankrupt / nrow(target_Y), 3), "\n")
-cat("Proportion of non-bankrupt companies: ", round(n_non_bankrupt / nrow(target_Y), 3), "\n")
+cat(
+    " Number of bankrupt companies: ", n_bankrupt, "\n",
+    "Number of non-bankrupt companies: ", n_non_bankrupt, "\n",
+    "Proportion of bankrupt companies: ", round(n_bankrupt / nrow(target_Y), 3), "\n",
+    "Proportion of non-bankrupt companies: ", round(n_non_bankrupt / nrow(target_Y), 3), "\n"
+)
 
 ```
+
+::: {.callout-note collapse="true"}
+#### Exporting the datasets
+
+```{r, eval=FALSE}
+# Save the bankruptcy dataset in a csv file
+write.csv(bankruptcy_data_cleaned, file = "../data/our_data/bankruptcy_data.csv", row.names = FALSE)
+
+# Save the target variable dataset in a csv file
+write.csv(target_Y, file = "../data/our_data/target_Y.csv", row.names = FALSE)
+```
+
+:::

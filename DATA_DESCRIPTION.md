@@ -47,6 +47,19 @@ This dataset provides information on bankruptcy events for each company, derived
 - **gvkey**: Unique identifier for each company in Compustat.
 - **conm**: Company name in Computstat.
 - **dlrsn**: Deletion reason (`2` for bankruptcy, `3` for liquidation) in Compustat.
+
+| **Code**  | **Description**                                                                          |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `1`       | Acquisition or merger                                                                    |
+| `2`       | Bankruptcy                                                                               |
+| `3`       | Liquidation                                                                              |
+| `4`       | Reverse Acquisition                                                                      |
+| `5`       | No longer fits file format                                                               |
+| `6`       | Leveraged buyout                                                                         |
+| `9`       | Now a private company                                                                    |
+| `10`      | Other (no SEC filings, etc)                                                              |
+| `7`       | Other (no longer files with SEC among other possible reasons) but pricing continues.     |
+
 - **dldte**: Deletion date (if applicable) in Compustat.
 - **DateFiled**: Date the bankruptcy case was filed in LoPucki.
 - **Disposition**: Reason for bankruptcy (e.g., “Chapter 7 at filing”) in LoPucki.
@@ -55,7 +68,7 @@ This dataset provides information on bankruptcy events for each company, derived
 - **default_date**: The date on which a financial distress or default event was recorded for the company in Moody.
 - **default_type**: The type of default or financial distress event, indicating the nature of the event in Moody. Examples include "Bankruptcy," "Distressed Exchange," "Missed Interest Payment," or specific bankruptcy chapters like "Chapter 11."
 - **fyear**: The fiscal year corresponding to the company’s financial data in Compustat. This represents the year in which the company’s financial performance is being analyzed and is used to align the financial data with any default events.
-- **Y**: The target variable indicating whether a company experienced a default event within a specified time window after the fiscal year (fyear). It is binary, where Y = 1 indicates that a default event occurred, and Y = 0 indicates no default event within the designated time window.
+- **Y**: The target variable indicating whether a company experienced a default event within one year after the fiscal year (fyear). It is binary, where Y = 1 indicates that a default event occurred, and Y = 0 indicates no default event within the designated time window.
 
 
 

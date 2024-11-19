@@ -6,6 +6,7 @@
 *.rds
 *.rdx
 .RData
+.RDataTmp
 .DS_Store
 .Rhistory
 data/

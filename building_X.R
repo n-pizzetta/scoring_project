@@ -3,6 +3,8 @@ library(RPostgres)
 library(dplyr)
 library(dbplyr)
 
+setwd("/Users/theodruilhe/Documents/M2_D3S/scoring_project")
+
 # Import Compustat
 file_path <- file.path("data", "wrds_data", "compustat_all.rds")
 if (file.exists(file_path)) {
@@ -101,38 +103,35 @@ merged_crsp_compustat <- merged_crsp_link  %>%
 
 
 print(merged_crsp_compustat, n=200)
-
-#Compute financial ratios
 merged_crsp_compustat <- merged_crsp_compustat %>%
   mutate(
     # Profitability Ratios
-    ROA = ni / at,                            # Return on Assets (ROA) = Net Income (ni) / Total Assets (at)
-    ROE = ni / ceq,                           # Return on Equity (ROE) = Net Income (ni) / Common Equity (ceq)
-    net_profit_margin = ni / revt,            # Net Profit Margin = Net Income (ni) / Total Revenue (revt)
+    ROA = ifelse(at == 0, NA, ni / at),                       # Return on Assets (ROA)
+    ROE = ifelse(ceq == 0, NA, ni / ceq),                     # Return on Equity (ROE)
+    net_profit_margin = ifelse(revt == 0, NA, ni / revt),     # Net Profit Margin
     
     # Efficiency Ratios
-    asset_turnover = revt / at,               # Asset Turnover = Total Revenue (revt) / Total Assets (at)
-    inventory_turnover = cogs / invt,         # Inventory Turnover = Cost of Goods Sold (cogs) / Inventory (invt)
+    asset_turnover = ifelse(at == 0, NA, revt / at),          # Asset Turnover
+    inventory_turnover = ifelse(invt == 0, NA, cogs / invt),  # Inventory Turnover
     
     # Leverage Ratios
-    debt_to_equity = lt / ceq,                # Debt to Equity Ratio = Total Liabilities (lt) / Common Equity (ceq)
-    debt_ratio = lt / at,                     # Debt Ratio = Total Liabilities (lt) / Total Assets (at)
+    debt_to_equity = ifelse(ceq == 0, NA, lt / ceq),          # Debt to Equity Ratio
+    debt_ratio = ifelse(at == 0, NA, lt / at),                # Debt Ratio
     
     # Market Ratios
-    PE_ratio = prc / (ni / csho),           # Price-to-Earnings (P/E) Ratio = Price per Share (prc) / (Net Income (ni) / Shares Outstanding (csho))
-    market_to_book = (prc * csho) / ceq,    # Market to Book Ratio = (Price per Share (prc) * Shares Outstanding (csho)) / Common Equity (ceq)
+    PE_ratio = ifelse(csho == 0 | ni == 0, NA, prc / (ni / csho)), # Price-to-Earnings (P/E) Ratio
+    market_to_book = ifelse(ceq == 0, NA, (prc * csho) / ceq),     # Market to Book Ratio
     
     # Cash Flow Ratios
-    operating_cash_flow_to_debt = oancf / lt, # Operating Cash Flow to Debt = Operating Cash Flow (oancf) / Total Liabilities (lt)
-    free_cash_flow_to_sales = (oancf - capx) / revt, # Free Cash Flow to Sales = (Operating Cash Flow (oancf) - Capital Expenditures (capx)) / Total Revenue (revt)
+    operating_cash_flow_to_debt = ifelse(lt == 0, NA, oancf / lt),          # Operating Cash Flow to Debt
+    free_cash_flow_to_sales = ifelse(revt == 0, NA, (oancf - capx) / revt), # Free Cash Flow to Sales
     
     # Other Ratios
-    book_value = at - pstkl - txdb - pstkrv - seq, # Book Value = Total Assets (at) - Preferred Stock Liquidating Value (pstkl) - Deferred Taxes (txdb) - Preferred Stock Redemption Value (pstkrv) - Shareholders' Equity (seq)
-    ebitda = ebitda,                          # EBITDA = Earnings Before Interest, Taxes, Depreciation, and Amortization (ebitda)
-    ebitda_margin = ebitda / revt,            # EBITDA Margin = EBITDA / Total Revenue (revt)
-    roic = ebitda / (seq + dlc + dltt),       # Return on Invested Capital (ROIC) = EBITDA / (Shareholders' Equity (seq) + Short-Term Debt (dlc) + Long-Term Debt (dltt))
-    leverage = (dlc + dltt) / (dlc + dltt + seq), # Leverage = (Short-Term Debt (dlc) + Long-Term Debt (dltt)) / (Short-Term Debt + Long-Term Debt + Shareholders' Equity (seq))
-    interest_coverage = ebitda / xint         # Interest Coverage Ratio = EBITDA / Interest Expense (xint)
+    book_value = at - pstkl - txdb - pstkrv - seq,                # Book Value
+    ebitda_margin = ifelse(revt == 0, NA, ebitda / revt),         # EBITDA Margin
+    roic = ifelse((seq + dlc + dltt) == 0, NA, ebitda / (seq + dlc + dltt)), # ROIC
+    leverage = ifelse((dlc + dltt + seq) == 0, NA, (dlc + dltt) / (dlc + dltt + seq)), # Leverage
+    interest_coverage = ifelse(xint == 0, NA, ebitda / xint)      # Interest Coverage Ratio
   )
 
 
@@ -152,4 +151,5 @@ X <- merged_crsp_compustat %>%
 
 
 # Save X in a rds file
-saveRDS(X, file = "data/X.rds")
+saveRDS(X, file = "data/our_data/X.rds")
+

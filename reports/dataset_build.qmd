@@ -42,14 +42,20 @@ To build our target variable we will go through the following steps:
 1.  Extracting the relevant data from the Compustat, LoPucki, and Moody’s datasets.
 2.  Merging these datasets to create a comprehensive dataset that captures the financial health and default history of each company.
 3.  Creating the target variable $Y$ based on bankruptcy events within 1 year of each fiscal year.
-4.  Selecting the most recent fiscal year for each company to use as the target variable dataset.
 
 ### Extracting Data
 
 ::: panel-tabset
 ### Compustat - Company
 
-The comp.company database contains some information for a wide range of companies: address, phone number, website url, ...<br> For our analysis we are interested in the deletion date and the deletion reason which gives us potential information about companies that could have been bankrupted.<br> To do so, we will extract the company name, the key, the reason for deletion, and the deletion date.
+The comp.company database contains some information for a wide range of companies: address, phone number, website url, ...<br>
+For our analysis we are interested in the deletion date and the deletion reason which gives us potential information about companies that could have been bankrupted.<br>
+To do so, we will extract the company name, the key, the reason for deletion, and the deletion date.<br>
+
+**Deletion Reason :**<br>
+- **2**: Bankruptcy<br>
+- **3**: Liquidation<br>
+
 
 ::: {.callout-note collapse="true"}
 #### WRDS Connection
@@ -142,8 +148,8 @@ cat("Number of companies within this period of time :", fy_size[1])
 
 Lopucki database includes approximately one thousand large public company bankruptcies filed in the United States Bankruptcy Courts under Chapter 7 or Chapter 11 since October 1, 1979 to December 11, 2022.<br>
 
--   **Chapter 7 :** liquidation
--   **Chapter 11 :** reorganization
+- **Chapter 7 :** liquidation<br>
+- **Chapter 11 :** reorganization<br>
 
 We will extract the company name, the key, the filling date, and the chapter.
 
@@ -244,7 +250,10 @@ comp_lopucki_moody <- comp_lopucki %>%
 
 Here, we will merge the combined dataset with the fiscal year data to create a comprehensive dataset that captures the financial health and default history of each company.<br>
 
-The Y variable will be created based on bankruptcy events within 1 year of each fiscal year, information like Chapter 7 and Chapter 11 bankruptcies from LoPucki, Moody's default and Computstat deletion date and reason.
+The Y variable will be created based on bankruptcy events within 1 year of each fiscal year taking into account the following criteria :
+- Chapter 7 and Chapter 11 bankruptcies from `LoPucki`,
+- `Moody's` default date and events that are bankruptcy or Chapter 11 related,
+- `Computstat` deletion date and reason (02, 03).
 
 ```{r Merging Compustat-LoPucki-Moody and Fiscal Year}
 # Merge financial data with the complete bankruptcy data
@@ -287,10 +296,15 @@ bankruptcy_data_cleaned <- bankruptcy_data %>%
 
 We already have well specified the companies that went bankrupt, but we need to clean the dataset to keep only the most relevant "non bankrupt" companies.<br>
 
-To do so, we will look at the reason of deletion for the companies that are not bankrupt and delete the companies with a deletion reason that cannot tells us if they went bankrupt.<br>
+To do so, we will look at the reason of deletion for the companies that are not bankrupt and delete the companies with a deletion reason that cannot tells us if they went bankrupt.<br> 
 
-For example, a company deleted for the reason "Acquisition or merger" should be keep in the dataset since it is not a bankruptcy reason.
-But, a company
+For example, a company deleted for the reason "Acquisition or merger" should be keep in the dataset since it is not a bankruptcy reason. But, a company deleted for the reason "Other" should be deleted from the dataset since we cannot know if it went bankrupt or not.<br>
+
+Deletion Reasons used here :
+- **05**: No longer fits file format
+- **07**: Other (no longer files with SEC among other possible reasons) but pricing continues.
+- **10**: Other (no SEC filings, etc)
+
 
 ```{r Cleaning Bankruptcy Dataset II}
 # Remove rows for companies with no bankruptcies and specific dlrsn values
@@ -302,11 +316,6 @@ bankruptcy_data_cleaned <- bankruptcy_data_cleaned %>%
 
 ### Extracting target Y from Bankruptcy Data
 
-Finally, we will extract the most recent fiscal year for each company to use as the target variable dataset.
-The objective is to keep only the most recent information for each company to predict bankruptcy risk.
-
-<br>
-
 **Final Bankruptcy Dataset:**
 
 ```{r Visualizing Bankruptcy Data}
@@ -315,19 +324,13 @@ styled_dt(bankruptcy_data_cleaned)
 
 <br>
 
-**Target Y:**
-
-```{r Extracting Target Y from Bankruptcy Data}
-# Select only gvkey and Y columns to use as the target variable dataset
-target_Y <- bankruptcy_data_cleaned %>%
-    select(gvkey, fyear, Y)
-```
-
-<br>
-
 **Summary of the target variable** $Y$ for bankruptcy prediction:
 
 ```{r Summary of Target Y}
+# Select only gvkey and Y columns to use as the target variable dataset
+target_Y <- bankruptcy_data_cleaned %>%
+    select(gvkey, fyear, Y)
+
 # Count the number of bankrupt companies
 n_bankrupt <- sum(target_Y$Y)
 n_non_bankrupt <- nrow(target_Y) - n_bankrupt
@@ -339,17 +342,14 @@ cat(
     "Proportion of bankrupt companies: ", round(n_bankrupt / nrow(target_Y), 3), "\n",
     "Proportion of non-bankrupt companies: ", round(n_non_bankrupt / nrow(target_Y), 3), "\n"
 )
-
 ```
 
 ::: {.callout-note collapse="true"}
 #### Exporting the datasets
 
 ```{r, eval=FALSE}
-# Save the bankruptcy dataset in a csv file
-write.csv(bankruptcy_data_cleaned, file = "../data/our_data/bankruptcy_data.csv", row.names = FALSE)
-
-# Save the target variable dataset in a csv file
-write.csv(target_Y, file = "../data/our_data/target_Y.csv", row.names = FALSE)
+# Save the bankruptcy dataset and target variable in a .rds file
+saveRDS(bankruptcy_data_cleaned, file = "../data/our_data/bankruptcy_data.rds")
+saveRDS(target_Y, file = "../data/our_data/target_Y.rds")
 ```
 :::

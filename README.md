@@ -29,3 +29,4 @@ We created our features and target variable using different sources from WRDS, L
 You can check our reports on the following links :
 - [Building our target Y](https://n-pizzetta.github.io/scoring_project/reports/dataset_build.html)
 - [Building our features]
+- [Modele](https://n-pizzetta.github.io/scoring_project/practical1_task2_3.html)

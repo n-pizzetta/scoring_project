@@ -326,13 +326,7 @@ roc_curve <- roc(test_data$Y, test_data$predicted_prob)
 print(paste("AUC:", round(auc(roc_curve), 4)))
 plot(roc_curve, col = "blue", main = "ROC Curve")
 
-# Precision, Recall, F1 Score (optional)
-precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
-recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
-f1_score <- 2 * (precision * recall) / (precision + recall)
-print(paste("Precision:", round(precision, 4)))
-print(paste("Recall:", round(recall, 4)))
-print(paste("F1 Score:", round(f1_score, 4)))
+
 ```
 
 ## Task 3:

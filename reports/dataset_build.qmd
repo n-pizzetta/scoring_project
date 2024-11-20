@@ -110,7 +110,7 @@ if (file.exists(file_path)) {
 
 # Extract relevant company information
 compustat_company_data <- company_db %>%
-    filter(is.na(dldte) | (year(dldte) >= "2011")) %>% 
+    #filter(is.na(dldte) | (year(dldte) >= "2000")) %>% 
     select(gvkey, conm, dlrsn, dldte) %>%
     collect()
 
@@ -136,13 +136,15 @@ if (file.exists(file_path)) {
 
 # Select relevant financial metrics and compute financial ratios
 fiscal_year <- compustat_all %>%
-    filter(fyear >= "2010") %>% 
+    #filter(fyear >= "2010") %>% 
+    filter(!is.na(fyear)) %>% 
     select(gvkey, fyear)
 
 fy_size <- fiscal_year %>% group_by(gvkey) %>% filter(fyear==max(fyear)) %>% dim
 
 cat("Number of companies within this period of time :", fy_size[1])
 ```
+
 
 ### LoPucki
 
@@ -199,7 +201,7 @@ if (file.exists(file_path)) {
 }
 
 moody_clean <- moody_db %>%
-    filter(year(default_date) >= "2011") %>% 
+    #filter(year(default_date) >= "2011") %>% 
     select(company_name, default_type, default_date)
 
 # Inspect the best matches
@@ -267,7 +269,7 @@ bankruptcy_data <-fiscal_year %>%
             # LoPucki bankruptcy within 1 year after fiscal year
             (!is.na(DateFiled) & (fyear + 1 == year(DateFiled))) |
             # Moody's default within 1 year after fiscal year
-            (!is.na(default_date) & (grepl("Bankruptcy", default_type, ignore.case = TRUE) | grepl("Chapter 11", default_type, ignore.case = TRUE)) & (fyear + 1 == year(default_date))),      
+            (!is.na(default_date) & (grepl("Liquidated", default_type, ignore.case = TRUE) | grepl("Bankruptcy", default_type, ignore.case = TRUE) | grepl("Chapter 11", default_type, ignore.case = TRUE)) & (fyear + 1 == year(default_date))),      
             1, 
             0
         )

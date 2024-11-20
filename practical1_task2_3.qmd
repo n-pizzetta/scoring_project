@@ -1,0 +1,427 @@
+---
+title: "practical1_task2"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(survival)
+library(dplyr)
+```
+
+## Data Manipulation
+
+Import the data
+
+```{r}
+setwd("/Users/theodruilhe/Documents/M2_D3S/scoring_project")
+
+# Import X
+file_path <- file.path("data", "our_data", "X.rds")
+if (file.exists(file_path)) {
+  X <- readRDS(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+
+# import target_Y
+file_path <- file.path("data", "our_data", "target_Y.rds")
+if (file.exists(file_path)) {
+  y <- readRDS(file_path)
+} else {
+  print("File not found. Please check the file path.")
+}
+```
+
+Create an new ID for the join
+
+```{r}
+X <- X %>%
+  mutate(ID = paste(gvkey, fyear, sep = "_"))
+y <- y %>%
+  mutate(ID = paste(gvkey, fyear, sep = "_"))
+```
+
+Join the two data set
+
+```{r}
+# Perform the inner join
+data <- y %>%
+  inner_join(X, by = c("ID" = "ID"))
+```
+
+Delete the useless columns
+
+```{r}
+data <- data %>%
+  select(-fyear.y, -gvkey.y)
+```
+
+Rename gvkey and fyear
+
+```{r}
+colnames(data)[colnames(data) == "gvkey.x"] <- "gvkey"
+colnames(data)[colnames(data) == "fyear.x"] <- "fyear"
+```
+
+Transform Y as a binary variable
+
+```{r}
+data <- data %>%
+  mutate(Y = ifelse(Y == 1, 1, 0))
+```
+
+## Descriptive Statistics
+
+```{r}
+# get info about the data
+str(data)
+```
+
+We apply the same technique as Shumway to deal with extreme values. Specifically: 1. Values above the 99th percentile of each variable are capped (set) to the 99th percentile value. 2. Values below the 1st percentile of each variable are floored (set) to the 1st percentile value.
+
+```{r}
+# Function to truncate values at 1st and 99th percentiles
+truncate_outliers <- function(column) {
+  p1 <- quantile(column, 0.01, na.rm = TRUE)  # 1st percentile
+  p99 <- quantile(column, 0.99, na.rm = TRUE) # 99th percentile
+  column <- ifelse(column < p1, p1, column)   # Floor at 1st percentile
+  column <- ifelse(column > p99, p99, column) # Cap at 99th percentile
+  return(column)
+}
+
+# Apply truncation to all numeric columns except Y
+data <- data %>%
+  mutate(across(where(is.numeric) & !all_of("Y"), truncate_outliers))
+```
+
+Missing values processing
+
+```{r}
+# Check for missing values and give the proportion of missing values by column
+missing_values <- data %>%
+  summarise(across(everything(), ~ sum(is.na(.)) / n())) %>%
+  gather() %>%
+  arrange(desc(value))
+
+# Print missing values
+print(missing_values)
+```
+
+```{r}
+# install.packages("naniar")
+library(naniar)
+gg_miss_var(data)  # Plot missing values by variable
+```
+
+Due to the big number of missing values in these two variables we will delete them
+
+```{r}
+summary(data$interest_coverage)
+```
+
+```{r}
+summary(data$inventory_turnover)
+```
+
+```{r}
+summary(data$book_value)
+```
+
+```{r}
+summary(data$roic)
+```
+
+Here we affect the value of the median for all Na
+
+```{r}
+summary(data$ebitda_margin)
+```
+
+```{r}
+# affect the median value to all NA's
+data$roic[is.na(data$roic)] <- median(data$roic, na.rm = TRUE)
+
+data$ebitda_margin[is.na(data$ebitda_margin)] <- median(data$ebitda_margin, na.rm = TRUE)
+
+data$free_cash_flow_to_sales[is.na(data$free_cash_flow_to_sales)] <- median(data$free_cash_flow_to_sales, na.rm = TRUE)
+
+data$leverage[is.na(data$leverage)] <- median(data$leverage, na.rm = TRUE)
+
+data$operating_cash_flow_to_debt[is.na(data$operating_cash_flow_to_debt)] <- median(data$operating_cash_flow_to_debt, na.rm = TRUE)
+
+data$debt_to_equity[is.na(data$debt_to_equity)] <- median(data$debt_to_equity, na.rm = TRUE)
+
+data$debt_ratio[is.na(data$debt_ratio)] <- median(data$debt_ratio, na.rm = TRUE)
+
+data$PE_ratio[is.na(data$PE_ratio)] <- median(data$PE_ratio, na.rm = TRUE)
+
+data$ROE[is.na(data$ROE)] <- median(data$ROE, na.rm = TRUE)
+
+data$ROA[is.na(data$ROA)] <- median(data$ROA, na.rm = TRUE)
+
+data$asset_turnover[is.na(data$asset_turnover)] <- median(data$asset_turnover, na.rm = TRUE)
+
+data$market_to_book[is.na(data$market_to_book)] <- median(data$market_to_book, na.rm = TRUE)
+
+data$net_profit_margin[is.na(data$net_profit_margin)] <- median(data$net_profit_margin, na.rm = TRUE)
+```
+
+```{r}
+data_cleaned <- data %>%
+  select(-book_value, -inventory_turnover, -interest_coverage, -ebitda)
+```
+
+```{r}
+gg_miss_var(data_cleaned)  # Plot missing values by variable
+```
+
+## Survival analysis (Hazard Model)
+
+```{r}
+#install.packages("survival")
+library(survival)
+```
+
+Create time and status variables
+
+```{r}
+# Prepare survival data
+df <- data_cleaned %>%
+  group_by(gvkey) %>% # Group by firm identifier
+  mutate(time = fyear - min(fyear),  # Calculate time-to-event
+         status = Y) %>%            # Status (1 = bankruptcy, 0 = no event)
+  ungroup()
+```
+
+Descriptive Statistics
+
+```{r}
+# make descriptive statistics of data
+str(df)
+```
+
+Fit the Cox Proportional Hazards Model (all the variables except ones define below with values goes to infinity)
+
+```{r}
+# Fit the Cox Proportional Hazards Model
+cox_model <- coxph(Surv(time, status) ~ 
+                     ROA + ROE + net_profit_margin + asset_turnover + 
+                     debt_to_equity + debt_ratio + PE_ratio + 
+                     market_to_book + operating_cash_flow_to_debt + 
+                     free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
+                   data = df)
+
+# View model summary
+summary(cox_model)
+```
+
+### Model evaluation
+
+The C-index measures the model’s ability to rank survival times correctly.
+
+```{r}
+# Concordance index
+cox_summary <- summary(cox_model)
+c_index <- cox_summary$concordance[1]  # First element of concordance contains the C-index
+cat("Concordance Index (C-Index):", c_index, "\n")
+```
+
+risk scores (linear predictors) to use them for stratification or classification
+
+```{r}
+# Compute risk scores
+risk_scores <- predict(cox_model, type = "risk")
+
+# Add risk scores to the dataset
+df <- df %>%
+  mutate(risk_score = risk_scores)
+```
+
+If we dichotomize the risk (e.g., high vs. low risk based on the median risk score), you can compute confusion matrices.
+
+```{r}
+# Dichotomize risk scores: high risk (1) vs. low risk (0) based on the median
+threshold <- median(risk_scores)
+df <- df %>%
+  mutate(predicted_status = ifelse(risk_score > threshold, 1, 0))
+
+# Create confusion matrix
+library(caret)
+confusion <- confusionMatrix(as.factor(df$predicted_status), as.factor(df$status))
+print(confusion)
+```
+
+## Logistic Model
+
+```{r}
+library(tidyverse)
+library(broom)
+```
+
+```{r}
+logistic_model <- glm(
+  Y ~ ROA + ROE + net_profit_margin + asset_turnover + 
+       debt_to_equity + debt_ratio + PE_ratio + 
+       market_to_book + operating_cash_flow_to_debt + 
+       free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
+  family = binomial(link = "logit"),
+  data = data_cleaned
+)
+
+# Step 3: Summarize the results
+summary(logistic_model)
+```
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(caret)     # For train-test split
+library(pROC)      # For evaluation
+
+# Step 1: Prepare the dataset
+# Ensure the dataset is named 'data_cleaned' and has no missing values or issues.
+data <- data_cleaned
+
+# Step 2: Train-test split
+set.seed(123)  # Set seed for reproducibility
+train_index <- createDataPartition(data$Y, p = 0.7, list = FALSE)  # 70% training data
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+# Step 3: Train the Logistic Regression Model
+logistic_model <- glm(
+  Y ~ ROA + ROE + net_profit_margin + asset_turnover + 
+       debt_to_equity + debt_ratio + PE_ratio + 
+       market_to_book + operating_cash_flow_to_debt + 
+       free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
+  data = train_data
+)
+
+# Step 4: Summarize the Model
+summary(logistic_model)
+
+# Step 5: Evaluate the Model on Test Data
+# Predict probabilities for the test set
+test_data <- test_data %>%
+  mutate(predicted_prob = predict(logistic_model, newdata = ., type = "response"))
+
+# Create predictions based on a cutoff (e.g., 0.5)
+test_data <- test_data %>%
+  mutate(predicted_class = ifelse(predicted_prob > 0.5, 1, 0))
+
+# Step 6: Model Evaluation Metrics
+# Confusion Matrix
+confusion_matrix <- table(test_data$predicted_class, test_data$Y)
+print("Confusion Matrix:")
+print(confusion_matrix)
+
+# Accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", round(accuracy, 4)))
+
+# ROC Curve and AUC
+roc_curve <- roc(test_data$Y, test_data$predicted_prob)
+print(paste("AUC:", round(auc(roc_curve), 4)))
+plot(roc_curve, col = "blue", main = "ROC Curve")
+
+
+```
+
+## Task 3:
+
+Classic **K-fold Cross-Validation** randomly splits the data into k folds, which is appropriate for independent and identically distributed (i.i.d.) data. However, time series data like yours (structured as firm-year observations) often exhibits **temporal dependency**: outcomes in one period can depend on past periods. Random splits would violate the temporal ordering and could lead to **data leakage**, where future information influences training.
+
+Instead, **Time Series Cross-Validation (Walk Forward Validation)** respects the temporal structure by ensuring that each training set includes only observations up to the prediction period. This method simulates a real-world scenario where only past data is available for forecasting.
+
+```{r}
+# Step 1: Prepare data
+data <- data_cleaned
+
+# Step 2: Sort data by firm (gvkey) and year (fyear) to respect temporal structure
+data <- data %>% arrange(gvkey, fyear)
+
+# Step 3: Define Time Series Cross-Validation (Walk Forward Scheme)
+# Create custom indices for training and testing
+time_series_cv <- function(data, n_splits) {
+  indices <- list()
+  n <- nrow(data)
+  split_size <- floor(n / (n_splits + 1))  # Calculate split size
+  
+  for (i in 1:n_splits) {
+    train_end <- split_size * i  # End index for training
+    test_start <- train_end + 1
+    test_end <- test_start + split_size - 1
+    
+    if (test_end > n) break  # Ensure test indices stay within range
+    
+    train_indices <- seq(1, train_end)
+    test_indices <- seq(test_start, test_end)
+    
+    indices[[i]] <- list(train = train_indices, test = test_indices)
+  }
+  indices
+}
+
+# Create 5 splits for time series CV
+n_splits <- 5
+cv_indices <- time_series_cv(data, n_splits)
+```
+
+```{r}
+
+# Step 4: Perform Walk Forward Validation
+results <- list()
+
+for (i in seq_along(cv_indices)) {
+  # Get train and test data
+  train_data <- data[cv_indices[[i]]$train, ]
+  test_data <- data[cv_indices[[i]]$test, ]
+  
+  # Fit logistic regression model on training data
+  logistic_model <- glm(
+    Y ~ ROA + ROE + net_profit_margin + asset_turnover + 
+       debt_to_equity + debt_ratio + PE_ratio + 
+       market_to_book + operating_cash_flow_to_debt + 
+       free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
+    family = binomial(link = "logit"),
+    data = train_data
+  )
+  
+  # Predict probabilities on test data
+  test_data <- test_data %>%
+    mutate(predicted_prob = predict(logistic_model, newdata = ., type = "response"),
+           predicted_class = ifelse(predicted_prob > 0.5, 1, 0))
+  
+  # Evaluate model performance
+  confusion_matrix <- table(test_data$predicted_class, test_data$Y)
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  roc_curve <- roc(test_data$Y, test_data$predicted_prob)
+  auc <- auc(roc_curve)
+  
+  # Store results
+  results[[i]] <- list(
+    fold = i,
+    accuracy = accuracy,
+    auc = auc,
+    confusion_matrix = confusion_matrix,
+    roc_curve = roc_curve
+  )
+}
+```
+
+```{r}
+# Step 5: Summarize Results
+accuracy_list <- sapply(results, function(x) x$accuracy)
+auc_list <- sapply(results, function(x) x$auc)
+
+cat("Walk Forward Validation Results:\n")
+cat("Average Accuracy:", round(mean(accuracy_list), 4), "\n")
+cat("Average AUC:", round(mean(auc_list), 4), "\n")
+```
+
+```{r}
+# Plot the last ROC curve as an example
+plot(results[[n_splits]]$roc_curve, col = "blue", main = "ROC Curve for Last Fold")
+```

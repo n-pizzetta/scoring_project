@@ -12,7 +12,7 @@ library(dplyr)
 
 ## Data Manipulation
 
-Import the data
+### Data Importation
 
 ```{r}
 setwd("/Users/theodruilhe/Documents/M2_D3S/scoring_project")
@@ -43,7 +43,110 @@ y <- y %>%
   mutate(ID = paste(gvkey, fyear, sep = "_"))
 ```
 
-Join the two data set
+### Data Quality check
+
+Function to calculate the number of duplicates
+
+```{r}
+count_duplicates <- function(data) {
+  # Total number of rows in the dataset
+  number_of_rows <- nrow(data)
+  
+  # Number of distinct IDs
+  distinct_count <- data %>%
+    ungroup() %>%
+    summarise(total_distinct_IDs = n_distinct(ID)) %>%
+    pull(total_distinct_IDs) # Extract the numeric value
+  
+  # Calculate and return the number of duplicates
+  number_of_duplicates <- number_of_rows - distinct_count
+  return(number_of_duplicates)
+}
+```
+
+#### Duplicates in X
+
+```{r}
+duplicates_count_X <- count_duplicates(X)
+print(duplicates_count_X)
+```
+
+```{r}
+duplicates_X <- X %>%
+  group_by(ID) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+print(duplicates_X)
+```
+
+For the duplicates rows the values of the columns are the same but not for not for the "PE_ratio" and "market_to_book" thus we will investigate the computation this columns.
+
+We choose to keep only the smallest value for theses variables in case of duplicates
+
+```{r}
+X <- X %>%
+  group_by(ID) %>% # Group by ID to handle duplicates
+  arrange(PE_ratio, market_to_book) %>% # Sort by smallest PE_ratio and market_to_book
+  slice(1) %>% # Keep only the first row (smallest values)
+  ungroup() # Remove grouping
+```
+
+We check for other duplicates
+
+```{r}
+duplicates_count_X <- count_duplicates(X)
+print(duplicates_count_X)
+```
+
+#### Duplicates in Y
+
+```{r}
+duplicates_count_y <- count_duplicates(y)
+print(duplicates_count_y)
+```
+
+```{r}
+duplicates_y <- y %>%
+  group_by(ID) %>%
+  filter(n() > 1)
+
+print(duplicates_y)
+```
+
+```{r}
+y <- y %>%
+  distinct()
+```
+
+```{r}
+duplicates_count_y <- count_duplicates(y)
+print(duplicates_count_y)
+```
+
+```{r}
+duplicates_y <- y %>%
+  group_by(ID) %>%
+  filter(n() > 1)
+
+print(duplicates_y)
+```
+
+We decide to keep only the rows with Y = 1
+
+```{r}
+y <- y %>%
+  filter(Y == 1)
+```
+
+```{r}
+duplicates_count_y <- count_duplicates(y)
+print(duplicates_count_y)
+```
+
+### Create final Data
+
+Join the data
 
 ```{r}
 # Perform the inner join
@@ -51,25 +154,31 @@ data <- y %>%
   inner_join(X, by = c("ID" = "ID"))
 ```
 
-Delete the useless columns
-
 ```{r}
+# Delete the useless columns
 data <- data %>%
   select(-fyear.y, -gvkey.y)
 ```
 
-Rename gvkey and fyear
-
 ```{r}
+# Rename gvkey and fyear
 colnames(data)[colnames(data) == "gvkey.x"] <- "gvkey"
 colnames(data)[colnames(data) == "fyear.x"] <- "fyear"
 ```
 
-Transform Y as a binary variable
-
 ```{r}
+# Transform Y as a binary variable
 data <- data %>%
   mutate(Y = ifelse(Y == 1, 1, 0))
+```
+
+#### Check for duplicates
+
+First we will check if we do not have duplicates in the ID column
+
+```{r}
+duplicates_count_data <- count_duplicates(data)
+print(duplicates_count_data)
 ```
 
 ## Descriptive Statistics
@@ -79,7 +188,12 @@ data <- data %>%
 str(data)
 ```
 
-We apply the same technique as Shumway to deal with extreme values. Specifically: 1. Values above the 99th percentile of each variable are capped (set) to the 99th percentile value. 2. Values below the 1st percentile of each variable are floored (set) to the 1st percentile value.
+We adopt Shumway's approach to handle extreme values, ensuring the data remains robust and well-distributed. Specifically:
+
+1.  Values exceeding the 99th percentile of each variable are capped at the 99th percentile value.
+2.  Values falling below the 1st percentile of each variable are floored at the 1st percentile value.
+
+This technique effectively minimizes the impact of outliers while preserving the integrity of the dataset.
 
 ```{r}
 # Function to truncate values at 1st and 99th percentiles

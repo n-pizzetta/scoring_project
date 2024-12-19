@@ -8,6 +8,15 @@ editor: visual
 library(tidyverse)
 library(survival)
 library(dplyr)
+# install.packages("naniar")
+library(naniar)
+# install.packages("mice")
+library(mice)
+library(tidyr)
+library(ggplot2)
+library(reshape2)
+#install.packages("survival")
+library(survival)
 ```
 
 ## Data Manipulation
@@ -132,11 +141,22 @@ duplicates_y <- y %>%
 print(duplicates_y)
 ```
 
+```{r}
+# Get the distinct IDs from duplicates_y
+distinct_ids <- duplicates_y %>%
+  distinct(ID) %>%
+  pull(ID) # Extract as a vector
+
+# View the distinct IDs
+print(distinct_ids)
+```
+
 We decide to keep only the rows with Y = 1
 
 ```{r}
+# Filter the original dataset to remove rows where Y = 0 for the distinct IDs
 y <- y %>%
-  filter(Y == 1)
+  filter(!(ID %in% distinct_ids & Y == 0))
 ```
 
 ```{r}
@@ -181,7 +201,7 @@ duplicates_count_data <- count_duplicates(data)
 print(duplicates_count_data)
 ```
 
-## Descriptive Statistics
+## Missing Values Processing
 
 ```{r}
 # get info about the data
@@ -210,7 +230,94 @@ data <- data %>%
   mutate(across(where(is.numeric) & !all_of("Y"), truncate_outliers))
 ```
 
-Missing values processing
+```{r}
+# Check for missing values and give the proportion of missing values by column
+missing_values <- data %>%
+  summarise(across(everything(), ~ sum(is.na(.)) / n())) %>%
+  gather() %>%
+  arrange(desc(value))
+
+# Print missing values
+print(missing_values)
+```
+
+```{r}
+gg_miss_var(data)  # Plot missing values by variable
+```
+
+We identified three groups of variables based on their proportion of missing values:
+
+1.  **High Missingness (\>30%)**:
+    -   Variables: `inventory_turnover` and `interest_coverage`.
+    -   Action: These variables have over 30% missing values and will be removed from the dataset due to their unreliability.
+2.  **Moderate Missingness (\~5%)**:
+    -   Variables: `book_value`, `ebitda_margin`, `free_cash_flow_to_sales`, and `net_profit_margin`.
+    -   Action: These variables will be handled individually on a case-by-case basis to ensure the most appropriate imputation or processing.
+3.  **Low Missingness (\<1%)**:
+    -   Variables: Remaining variables with less than 1% missingness.
+    -   Action: Mean imputation will be applied to fill the missing values for these variables, ensuring minimal impact on the dataset's integrity.
+
+#### 1. High missingness
+
+```{r}
+data <- data %>%
+  select(-inventory_turnover, -interest_coverage)
+```
+
+#### Distribution of missing values
+
+We want to know in which case we are based on these kind of distributions:
+
+**a. Univariate Missing Values:** If the same individuals have missing values for the same (d \< p) variables.
+
+**b. Monotonic Missing Values:** If the variables can be ordered so that, when the observation (y\_{ij}) is missing for the variable (Y_j), then all the following variables for the same individual, (y\_{ik}, k \> j), are also missing.
+
+**c. Non-Monotonic or Arbitrary Missing Values:** If the missing values are without structure, i.e., they are distributed without particular structure in the dataset.
+
+```{r}
+# Créer un dataset avec les lignes ayant au moins une valeur manquante
+rows_with_na <- data %>%
+  filter(if_any(everything(), is.na))
+
+# Afficher le nouveau dataset
+print(rows_with_na)
+```
+
+```{r}
+# Compter le nombre distinct de colonnes avec des valeurs manquantes par gvkey
+missing_values_per_gvkey <- data %>%
+  group_by(gvkey) %>%
+  summarise(
+    distinct_missing_columns = sum(sapply(across(everything(), is.na), any))
+  )
+```
+
+```{r}
+missing_distribution <- missing_values_per_gvkey %>%
+  group_by(distinct_missing_columns) %>% # Grouper par nombre de colonnes avec NA
+  summarise(
+    count_gvkey = n() # Compter le nombre de gvkey pour chaque groupe
+  ) %>%
+  arrange(distinct_missing_columns) # Trier par nombre de colonnes avec NA
+
+# Afficher les résultats
+print(missing_distribution)
+```
+
+For the company where the number of distinct columns with missing values is greater than 5 we will delete them
+
+```{r}
+# Supprimer les gvkey avec au moins 5 distinct_missing_columns
+data <- data %>%
+  left_join(missing_values_per_gvkey, by = "gvkey") %>% # Joindre avec les informations des colonnes manquantes
+  filter(distinct_missing_columns < 5 | is.na(distinct_missing_columns)) %>% # Garder les gvkey avec moins de 5 colonnes manquantes
+  select(-distinct_missing_columns) # Optionnel : Supprimer la colonne supplémentaire si elle n'est plus nécessaire
+
+# Afficher le dataset filtré
+print(data)
+```
+
+We will look at the remaining missing values
 
 ```{r}
 # Check for missing values and give the proportion of missing values by column
@@ -224,27 +331,84 @@ print(missing_values)
 ```
 
 ```{r}
-# install.packages("naniar")
-library(naniar)
 gg_miss_var(data)  # Plot missing values by variable
 ```
 
-Due to the big number of missing values in these two variables we will delete them
-
-```{r}
-summary(data$interest_coverage)
-```
-
-```{r}
-summary(data$inventory_turnover)
-```
+#### 2. Moderate Missingness
 
 ```{r}
 summary(data$book_value)
 ```
 
+Feature correlation analysis to asses the relevance of imputation
+
 ```{r}
-summary(data$roic)
+numeric_data <- data %>% select(where(is.numeric))
+
+correlations <- numeric_data %>%
+  summarise(across(everything(), ~ cor(.x, numeric_data$book_value, use = "complete.obs")))
+
+correlation_df <- tibble(variable = colnames(numeric_data), correlation = as.numeric(correlations))
+```
+
+Heatmap
+
+```{r}
+correlation_matrix <- cor(numeric_data, use = "complete.obs")
+
+# Transformer la matrice en un format long pour ggplot
+melted_correlation <- melt(correlation_matrix)
+
+# Heatmap des corrélations
+ggplot(melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  theme_minimal() +
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+correlation_with_book_value <- correlation_df %>%
+  filter(variable != "book_value") # Exclure la corrélation avec elle-même
+
+ggplot(correlation_with_book_value, aes(x = reorder(variable, correlation), y = correlation)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Correlation with Book Value", x = "Variables", y = "Correlation")
+```
+
+We can see that ebitda and book value are higly correlated, we can think of use ebitda to impute missing values in book_value
+
+```{r}
+# Filtrer les lignes où book_value est NA
+rows_with_na_book_value <- data %>%
+  filter(is.na(book_value))
+
+# Afficher le dataset résultant
+print(rows_with_na_book_value)
+```
+
+```{r}
+summary(data$free_cash_flow_to_sales)
+```
+
+```{r}
+# Filter correlations excluding free_cash_flow_to_sales
+correlation_with_free_cash_flow <- correlation_df %>%
+  filter(variable != "free_cash_flow_to_sales") # Exclude self-correlation
+
+# Plot correlations with free_cash_flow_to_sales
+ggplot(correlation_with_free_cash_flow, aes(x = reorder(variable, correlation), y = correlation)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Correlation with Free Cash Flow to Sales",
+    x = "Variables",
+    y = "Correlation"
+  )
 ```
 
 Here we affect the value of the median for all Na
@@ -254,66 +418,74 @@ summary(data$ebitda_margin)
 ```
 
 ```{r}
-# affect the median value to all NA's
-data$roic[is.na(data$roic)] <- median(data$roic, na.rm = TRUE)
+# Filter correlations excluding ebitda_margin
+correlation_with_ebitda_margin <- correlation_df %>%
+  filter(variable != "ebitda_margin") # Exclude self-correlation
 
-data$ebitda_margin[is.na(data$ebitda_margin)] <- median(data$ebitda_margin, na.rm = TRUE)
-
-data$free_cash_flow_to_sales[is.na(data$free_cash_flow_to_sales)] <- median(data$free_cash_flow_to_sales, na.rm = TRUE)
-
-data$leverage[is.na(data$leverage)] <- median(data$leverage, na.rm = TRUE)
-
-data$operating_cash_flow_to_debt[is.na(data$operating_cash_flow_to_debt)] <- median(data$operating_cash_flow_to_debt, na.rm = TRUE)
-
-data$debt_to_equity[is.na(data$debt_to_equity)] <- median(data$debt_to_equity, na.rm = TRUE)
-
-data$debt_ratio[is.na(data$debt_ratio)] <- median(data$debt_ratio, na.rm = TRUE)
-
-data$PE_ratio[is.na(data$PE_ratio)] <- median(data$PE_ratio, na.rm = TRUE)
-
-data$ROE[is.na(data$ROE)] <- median(data$ROE, na.rm = TRUE)
-
-data$ROA[is.na(data$ROA)] <- median(data$ROA, na.rm = TRUE)
-
-data$asset_turnover[is.na(data$asset_turnover)] <- median(data$asset_turnover, na.rm = TRUE)
-
-data$market_to_book[is.na(data$market_to_book)] <- median(data$market_to_book, na.rm = TRUE)
-
-data$net_profit_margin[is.na(data$net_profit_margin)] <- median(data$net_profit_margin, na.rm = TRUE)
+# Plot correlations with ebitda_margin
+ggplot(correlation_with_ebitda_margin, aes(x = reorder(variable, correlation), y = correlation)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Correlation with EBITDA Margin",
+    x = "Variables",
+    y = "Correlation"
+  )
 ```
 
 ```{r}
-data_cleaned <- data %>%
-  select(-book_value, -inventory_turnover, -interest_coverage, -ebitda)
+summary(data$net_profit_margin)
+```
+
+#### Imputation
+
+```{r}
+# Imputation avec mice
+# Paramètres :
+# - method = "pmm" : Predictive Mean Matching (pour variables numériques)
+# - m = 5 : Générer 5 jeux de données imputés
+imputed_data <- mice(data, method = "pmm", m = 5, seed = 123)
+
+# Résumer les imputations
+summary(imputed_data)
+
+# Extraire le premier jeu de données imputé
+data <- complete(imputed_data, 1)
 ```
 
 ```{r}
 gg_miss_var(data_cleaned)  # Plot missing values by variable
 ```
 
-## Survival analysis (Hazard Model)
+## Descriptive Statistics
+
+#### Target Variable
 
 ```{r}
-#install.packages("survival")
-library(survival)
+# Calculer les gvkey ayant au moins une fois Y = 1
+gvkey_with_Y1 <- data %>%
+  group_by(gvkey) %>% # Grouper par gvkey
+  summarise(has_Y1 = any(Y == 1)) %>% # Vérifier si Y = 1 existe pour chaque gvkey
+  summarise(proportion_Y1 = mean(has_Y1)) # Calculer la proportion
+
+# Afficher la proportion
+print(gvkey_with_Y1)
 ```
+
+We have almost 3% of company that have bankrupted
+
+## Survival analysis (Hazard Model)
 
 Create time and status variables
 
 ```{r}
 # Prepare survival data
-df <- data_cleaned %>%
+df <- data %>%
   group_by(gvkey) %>% # Group by firm identifier
   mutate(time = fyear - min(fyear),  # Calculate time-to-event
          status = Y) %>%            # Status (1 = bankruptcy, 0 = no event)
   ungroup()
-```
-
-Descriptive Statistics
-
-```{r}
-# make descriptive statistics of data
-str(df)
 ```
 
 Fit the Cox Proportional Hazards Model (all the variables except ones define below with values goes to infinity)

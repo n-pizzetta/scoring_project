@@ -29,28 +29,35 @@ if (file.exists(file_path)) {
   stop("Linktable file not found. Please check the file path.")
 }
 
-# Create a year column
+# Create a year column and filter crsp_daily
 crsp_daily <- crsp_daily %>%
   mutate(fyear = as.integer(format(as.Date(date), "%Y"))) %>%
   filter(fyear >= 2010 & fyear <= 2024)
 
+# Filter compustat_all for the same period
 compustat_all <- compustat_all %>%
   filter(fyear >= 2010 & fyear <= 2024)
 
-# Merge crsp and linktable
+# Deduplicate ccmxpf_linktable based on permno and date ranges
+ccmxpf_linktable <- ccmxpf_linktable %>%
+  arrange(permno, linkdt, linkenddt) %>% # Ensure ordering by permno and date
+  group_by(permno) %>%
+  filter(row_number() == 1) %>% # Keep only the first row for each permno
+  ungroup()
+
+# Merge crsp_daily with the deduplicated linktable
 merged_crsp_link <- crsp_daily %>%
   select(permno, prc, shrout, fyear, date) %>%
-  left_join(ccmxpf_linktable %>% distinct(permno, gvkey, linkdt, linkenddt), by = "permno") %>%
-  filter(!is.na(gvkey) & (date >= linkdt & date <= linkenddt)) %>%
+  left_join(ccmxpf_linktable, by = "permno") %>%
+  filter(!is.na(gvkey) & (date >= linkdt & date <= linkenddt)) %>% # Filter valid date ranges
   group_by(fyear, permno) %>%
   summarise(
-    gvkey = first(gvkey),
+    gvkey = first(gvkey), # Use the first gvkey (no duplicates due to deduplication)
     prc = mean(prc, na.rm = TRUE),
     shrout = mean(shrout, na.rm = TRUE),
     .groups = "drop"
   )
-
-# Compute and aggregate financial data
+# Aggregate financial data from compustat_all
 compustat_all <- compustat_all %>%
   group_by(fyear, gvkey) %>%
   summarise(
@@ -77,7 +84,7 @@ compustat_all <- compustat_all %>%
     .groups = "drop"
   )
 
-# Merge Compustat with CRSP
+# Merge compustat_all with merged_crsp_link
 merged_crsp_compustat <- merged_crsp_link %>%
   left_join(compustat_all, by = c("gvkey", "fyear"))
 
@@ -117,3 +124,4 @@ X <- merged_crsp_compustat %>%
 
 # Save the dataset
 saveRDS(X, file = "data/our_data/X.rds")
+

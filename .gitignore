@@ -5,3 +5,5 @@
 .DS_Store
 .Rhistory
 dataset_build_cache/
+data/wrds_data/
+data/default_data/

@@ -1,0 +1,104 @@
+---
+title: "Naive DD"
+subtitle: "Scoring, M2 Data Science for Social Sciences"
+author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd Saue"
+format: 
+  html:
+    theme: 
+       light: cerulean
+    code-fold: false
+    warning: false
+    message: false
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    self-contained: true
+    code-tools:
+      source: true
+editor: 
+    markdown: 
+       wrap: sentence
+---
+
+```{r, echo=FALSE}
+library(dplyr)
+library(readr)
+library(DT)
+library(RPostgres)
+library(lubridate)
+```
+
+
+
+
+## 1. Calculate the market value of assets (V)
+The market value of assets is estimated as the sum of the market value of equity and total debt
+
+```{r}
+df = read_csv("data.csv")
+data <- df %>%
+  mutate(
+    market_value_equity = market_to_book * book_value, # Market value of equity
+    total_assets = book_value,                         # Approximate total assets using book value
+    V = market_value_equity + (leverage * book_value)  # Market value of assets = equity + debt
+  )
+```
+
+
+
+## 2. Calculate total debt (D)
+Total debt is derived using the leverage ratio and book value of assets
+
+```{r}
+data <- data %>%
+  mutate(
+    D = leverage * book_value # Total debt
+  )
+```
+
+
+## 3. Calculate the Naive Distance to Default (Naive DD)
+Naive DD = 1 - (Debt / Market value of assets)
+
+```{r}
+data <- data %>%
+  mutate(
+    naive_DD = 1 - (D / V)
+  )
+```
+
+
+## 4. Select relevant columns to display or save the results
+
+```{r}
+naive_DD_results <- data %>%
+  select(fyear, gvkey, market_value_equity, D, V, naive_DD)
+```
+
+
+
+## 5. Merge with Y column and filter
+```{r}
+naive_DD_results <- naive_DD_results %>%
+  left_join(data %>% select(fyear, gvkey, Y), by = c("fyear", "gvkey"))
+
+naive_DD_filtered <- naive_DD_results %>%
+  filter(Y == 1)
+```
+
+### Results dataset :
+```{r, echo = FALSE}
+datatable(naive_DD_results, 
+          options = list(pageLength = 10,
+                         autoWidth = TRUE,
+                         searchable = TRUE, 
+                         filter = "top"))
+```
+### Results dataset (With only Y = 1)
+```{r, echo = FALSE}
+datatable(naive_DD_filtered, 
+          options = list(pageLength = 10,
+                         autoWidth = TRUE,
+                         searchable = TRUE, 
+                         filter = "top"))
+```

@@ -1,13 +1,7 @@
 *.pdf
-*.csv
-*.json
-*.txt
-*.xlsx
-*.rds
 *.rdx
 .RData
 .RDataTmp
 .DS_Store
 .Rhistory
-data/
 dataset_build_cache/

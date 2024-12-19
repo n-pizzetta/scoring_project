@@ -16,7 +16,9 @@ library(tidyr)
 library(ggplot2)
 library(reshape2)
 #install.packages("survival")
-library(survival)
+library(broom)
+library(stats)
+library(pROC)
 ```
 
 ## Data Manipulation
@@ -542,52 +544,73 @@ print(confusion)
 ## Logistic Model
 
 ```{r}
-library(tidyverse)
-library(broom)
+df <- data %>%
+  group_by(gvkey) %>% # Group by firm identifier
+  mutate(time = fyear - min(fyear),  # Calculate time-to-event
+         status = Y) %>%            # Status (1 = bankruptcy, 0 = no event)
+  ungroup()
 ```
 
 ```{r}
-logistic_model <- glm(
-  Y ~ ROA + ROE + net_profit_margin + asset_turnover + 
-       debt_to_equity + debt_ratio + PE_ratio + 
-       market_to_book + operating_cash_flow_to_debt + 
-       free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
-  family = binomial(link = "logit"),
-  data = data_cleaned
-)
+str(df)
+```
 
-# Step 3: Summarize the results
+```{r}
+# Create a formula for the logistic regression
+# Exclude non-numeric predictors like gvkey, ID, and time
+predictors <- names(df)[!names(df) %in% c("gvkey", "fyear", "ID", "Y", "status")]
+
+# Construct the formula dynamically
+formula <- as.formula(paste("Y ~", paste(predictors, collapse = " + ")))
+
+# Fit the logistic regression model
+logistic_model <- glm(formula, data = df, family = binomial)
+
+# Summarize the model
 summary(logistic_model)
 ```
 
+\*\*Select the dataset\*\*
+
 ```{r}
-# Load necessary libraries
-library(tidyverse)
-library(caret)     # For train-test split
-library(pROC)      # For evaluation
+data <- df
+```
 
-# Step 1: Prepare the dataset
-# Ensure the dataset is named 'data_cleaned' and has no missing values or issues.
-data <- data_cleaned
+**Train-Test split**
 
+```{r}
 # Step 2: Train-test split
 set.seed(123)  # Set seed for reproducibility
 train_index <- createDataPartition(data$Y, p = 0.7, list = FALSE)  # 70% training data
 train_data <- data[train_index, ]
 test_data <- data[-train_index, ]
+```
 
+**Train the model**
+
+```{r}
 # Step 3: Train the Logistic Regression Model
-logistic_model <- glm(
-  Y ~ ROA + ROE + net_profit_margin + asset_turnover + 
-       debt_to_equity + debt_ratio + PE_ratio + 
-       market_to_book + operating_cash_flow_to_debt + 
-       free_cash_flow_to_sales + ebitda_margin + roic + leverage, 
-  data = train_data
-)
+# Create a formula for the logistic regression
+# Exclude non-numeric predictors like gvkey, ID, and time
+predictors <- names(data)[!names(data) %in% c("gvkey", "fyear", "ID", "Y", "status")]
 
+# Construct the formula dynamically
+formula <- as.formula(paste("Y ~", paste(predictors, collapse = " + ")))
+
+# Fit the logistic regression model
+logistic_model <- glm(formula, data = data, family = binomial)
+```
+
+**Summarize the Model**
+
+```{r}
 # Step 4: Summarize the Model
 summary(logistic_model)
+```
 
+**Evaluate the model on test data**
+
+```{r}
 # Step 5: Evaluate the Model on Test Data
 # Predict probabilities for the test set
 test_data <- test_data %>%
@@ -596,10 +619,15 @@ test_data <- test_data %>%
 # Create predictions based on a cutoff (e.g., 0.5)
 test_data <- test_data %>%
   mutate(predicted_class = ifelse(predicted_prob > 0.5, 1, 0))
+```
 
+**Model Evaluation Metrics**
+
+```{r}
 # Step 6: Model Evaluation Metrics
+
 # Confusion Matrix
-confusion_matrix <- table(test_data$predicted_class, test_data$Y)
+confusion_matrix <- table(Predicted = test_data$predicted_class, Actual = test_data$Y)
 print("Confusion Matrix:")
 print(confusion_matrix)
 
@@ -607,12 +635,112 @@ print(confusion_matrix)
 accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
 print(paste("Accuracy:", round(accuracy, 4)))
 
+# Precision (for the positive class)
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+print(paste("Precision:", round(precision, 4)))
+
+# Recall (Sensitivity or True Positive Rate)
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+print(paste("Recall (Sensitivity):", round(recall, 4)))
+
+# Specificity (True Negative Rate)
+specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+print(paste("Specificity:", round(specificity, 4)))
+
+# F1 Score
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+print(paste("F1 Score:", round(f1_score, 4)))
+```
+
+```{r}
 # ROC Curve and AUC
 roc_curve <- roc(test_data$Y, test_data$predicted_prob)
 print(paste("AUC:", round(auc(roc_curve), 4)))
 plot(roc_curve, col = "blue", main = "ROC Curve")
+```
 
+```{r}
+auc(roc_curve)
+```
 
+**Choosing the good threshold**
+
+```{r}
+# Plot sensitivity and specificity against thresholds
+ggplot(roc_coords_df, aes(x = threshold)) +
+  geom_line(aes(y = sensitivity, color = "Sensitivity")) +
+  geom_line(aes(y = specificity, color = "Specificity")) +
+  labs(title = "Sensitivity and Specificity vs Threshold",
+       x = "Threshold",
+       y = "Value") +
+  theme_minimal() +
+  scale_color_manual(name = "Metric", values = c("Sensitivity" = "blue", "Specificity" = "red"))
+```
+
+**Cross Validation to choose the threshold**
+
+```{r}
+# Define a sequence of thresholds to test
+thresholds <- seq(0, 1, by = 0.01)
+
+# Initialize a dataframe to store results
+cv_results <- data.frame(threshold = thresholds, accuracy = NA, precision = NA, recall = NA, f1_score = NA)
+
+# Perform cross-validation for each threshold
+for (i in seq_along(thresholds)) {
+  threshold <- thresholds[i]
+  
+  # Create predictions based on the current threshold
+  test_data <- test_data %>%
+    mutate(predicted_class = ifelse(predicted_prob > threshold, 1, 0))
+  
+  # Confusion Matrix
+  confusion_matrix <- table(Predicted = test_data$predicted_class, Actual = test_data$Y)
+  
+  # Handle cases where the confusion matrix dimensions are insufficient
+  tp <- ifelse("1" %in% rownames(confusion_matrix) & "1" %in% colnames(confusion_matrix), confusion_matrix["1", "1"], 0)
+  fp <- ifelse("1" %in% rownames(confusion_matrix) & "0" %in% colnames(confusion_matrix), confusion_matrix["1", "0"], 0)
+  fn <- ifelse("0" %in% rownames(confusion_matrix) & "1" %in% colnames(confusion_matrix), confusion_matrix["0", "1"], 0)
+  tn <- ifelse("0" %in% rownames(confusion_matrix) & "0" %in% colnames(confusion_matrix), confusion_matrix["0", "0"], 0)
+  
+  # Calculate metrics
+  accuracy <- (tp + tn) / sum(confusion_matrix)
+  precision <- ifelse(tp + fp > 0, tp / (tp + fp), NA)
+  recall <- ifelse(tp + fn > 0, tp / (tp + fn), NA)
+  f1_score <- ifelse(!is.na(precision) & !is.na(recall) & (precision + recall > 0), 2 * ((precision * recall) / (precision + recall)), NA)
+  
+  # Store metrics in cv_results
+  cv_results[i, ] <- c(threshold, accuracy, precision, recall, f1_score)
+}
+
+# Find the optimal threshold based on a specific metric (e.g.,recall)
+optimal_threshold <- cv_results %>% filter(f1_score == max(f1_score, na.rm = TRUE))
+print(optimal_threshold)
+
+# Plot metrics against thresholds
+cv_results_long <- cv_results %>%
+  pivot_longer(cols = c(accuracy, precision, recall, f1_score), names_to = "metric", values_to = "value")
+
+ggplot(cv_results_long, aes(x = threshold, y = value, color = metric)) +
+  geom_line() +
+  labs(title = "Metrics vs Threshold", x = "Threshold", y = "Metric Value") +
+  theme_minimal()
+```
+
+```{r}
+# Extract the optimal threshold
+optimal_threshold_value <- optimal_threshold$threshold[1]
+
+# Create predictions based on the optimal threshold
+test_data <- test_data %>%
+  mutate(predicted_class = ifelse(predicted_prob > optimal_threshold_value, 1, 0))
+
+# Generate the confusion matrix
+confusion_matrix_optimal <- table(Predicted = test_data$predicted_class, Actual = test_data$Y)
+
+# Print the confusion matrix
+print("Confusion Matrix at Optimal Threshold:")
+print(confusion_matrix_optimal)
 ```
 
 ## Task 3:

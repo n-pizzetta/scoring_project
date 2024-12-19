@@ -456,10 +456,6 @@ summary(imputed_data)
 data <- complete(imputed_data, 1)
 ```
 
-```{r}
-gg_miss_var(data_cleaned)  # Plot missing values by variable
-```
-
 ## Descriptive Statistics
 
 #### Target Variable
@@ -624,8 +620,6 @@ test_data <- test_data %>%
 **Model Evaluation Metrics**
 
 ```{r}
-# Step 6: Model Evaluation Metrics
-
 # Confusion Matrix
 confusion_matrix <- table(Predicted = test_data$predicted_class, Actual = test_data$Y)
 print("Confusion Matrix:")
@@ -751,8 +745,6 @@ Instead, **Time Series Cross-Validation (Walk Forward Validation)** respects the
 
 ```{r}
 # Step 1: Prepare data
-data <- data_cleaned
-
 # Step 2: Sort data by firm (gvkey) and year (fyear) to respect temporal structure
 data <- data %>% arrange(gvkey, fyear)
 
@@ -784,7 +776,6 @@ cv_indices <- time_series_cv(data, n_splits)
 ```
 
 ```{r}
-
 # Step 4: Perform Walk Forward Validation
 results <- list()
 

@@ -396,44 +396,10 @@ print(rows_with_na_book_value)
 summary(data$free_cash_flow_to_sales)
 ```
 
-```{r}
-# Filter correlations excluding free_cash_flow_to_sales
-correlation_with_free_cash_flow <- correlation_df %>%
-  filter(variable != "free_cash_flow_to_sales") # Exclude self-correlation
-
-# Plot correlations with free_cash_flow_to_sales
-ggplot(correlation_with_free_cash_flow, aes(x = reorder(variable, correlation), y = correlation)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip() +
-  theme_minimal() +
-  labs(
-    title = "Correlation with Free Cash Flow to Sales",
-    x = "Variables",
-    y = "Correlation"
-  )
-```
-
 Here we affect the value of the median for all Na
 
 ```{r}
 summary(data$ebitda_margin)
-```
-
-```{r}
-# Filter correlations excluding ebitda_margin
-correlation_with_ebitda_margin <- correlation_df %>%
-  filter(variable != "ebitda_margin") # Exclude self-correlation
-
-# Plot correlations with ebitda_margin
-ggplot(correlation_with_ebitda_margin, aes(x = reorder(variable, correlation), y = correlation)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip() +
-  theme_minimal() +
-  labs(
-    title = "Correlation with EBITDA Margin",
-    x = "Variables",
-    y = "Correlation"
-  )
 ```
 
 ```{r}
@@ -442,7 +408,13 @@ summary(data$net_profit_margin)
 
 #### Imputation
 
-```{r}
+**MICE with Predictive Mean Matching (PMM)** is a robust method for handling missing data. MICE iteratively imputes missing values by modeling each variable conditionally on others.
+
+**PMM** predicts missing values using regression and replaces them with observed values closest to the prediction, ensuring realistic imputations that respect the original data distribution.
+
+With `m = 5`, multiple datasets are generated to account for imputation uncertainty, and `seed = 123` ensures reproducibility. This approach reduces bias, preserves variability, and produces reliable analyses by addressing missing data effectively.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Imputation avec mice
 # Paramètres :
 # - method = "pmm" : Predictive Mean Matching (pour variables numériques)
@@ -474,6 +446,12 @@ print(gvkey_with_Y1)
 We have almost 3% of company that have bankrupted
 
 ## Survival analysis (Hazard Model)
+
+**Survival Analysis in Bankruptcy Scoring**
+
+Survival analysis is a statistical approach to predict the time to an event, such as a company's bankruptcy. The **Cox Proportional Hazards Model** is used to evaluate the relationship between financial ratios and the hazard of bankruptcy. This model estimates how variables like profitability (e.g., ROA, ROE), leverage (e.g., debt-to-equity, debt ratio), and efficiency (e.g., asset turnover) impact the likelihood of bankruptcy over time.
+
+In the code, the model is fitted with financial variables as predictors and time-to-bankruptcy as the survival outcome. The results reveal the significant factors influencing the bankruptcy risk.
 
 Create time and status variables
 
@@ -566,11 +544,30 @@ logistic_model <- glm(formula, data = df, family = binomial)
 summary(logistic_model)
 ```
 
-\*\*Select the dataset\*\*
+The logistic regression model evaluates the relationship between financial variables and the probability of bankruptcy. Key results:
+
+-   **Significant Predictors**:
+
+    -   **ROA**: Negative coefficient (-1.499, *p* \< 0.001) indicates higher ROA reduces bankruptcy risk.
+    -   **ROE**: Negative coefficient (-0.137, *p* \< 0.01) suggests higher ROE lowers risk.
+    -   **Net Profit Margin**: Positive coefficient (0.074, *p* \< 0.01) suggests higher margins increase bankruptcy likelihood, potentially due to overstated profits.
+    -   **EBITDA**: Negative coefficient (-0.0016, *p* \< 0.001) implies higher EBITDA reduces risk.
+    -   **ROIC**: Positive coefficient (0.748, *p* \< 0.001) indicates higher ROIC increases risk, possibly signaling aggressive reinvestment strategies.
+    -   **Leverage**: Strong positive effect (2.231, *p* \< 0.001) highlights higher leverage as a key bankruptcy driver.
+
+-   **Non-Significant Predictors**: Variables like debt-to-equity, debt ratio, and market-to-book ratio showed no significant effect (*p* \> 0.1).
+
+-   **Model Fit**:
+
+    -   Residual deviance decreased substantially (2172.2 to 1815.7), and the AIC is 1849.7, indicating a good fit.
+
+This model identifies leverage and profitability measures as critical indicators of bankruptcy risk, providing actionable insights for financial analysis.
 
 ```{r}
 data <- df
 ```
+
+### Prediction Evaluation
 
 **Train-Test split**
 
@@ -586,7 +583,6 @@ test_data <- data[-train_index, ]
 
 ```{r}
 # Step 3: Train the Logistic Regression Model
-# Create a formula for the logistic regression
 # Exclude non-numeric predictors like gvkey, ID, and time
 predictors <- names(data)[!names(data) %in% c("gvkey", "fyear", "ID", "Y", "status")]
 
@@ -614,7 +610,7 @@ test_data <- test_data %>%
 
 # Create predictions based on a cutoff (e.g., 0.5)
 test_data <- test_data %>%
-  mutate(predicted_class = ifelse(predicted_prob > 0.5, 1, 0))
+  mutate(predicted_class = ifelse(predicted_prob > 0.3, 1, 0))
 ```
 
 **Model Evaluation Metrics**
@@ -657,21 +653,27 @@ plot(roc_curve, col = "blue", main = "ROC Curve")
 auc(roc_curve)
 ```
 
-**Choosing the good threshold**
-
-```{r}
-# Plot sensitivity and specificity against thresholds
-ggplot(roc_coords_df, aes(x = threshold)) +
-  geom_line(aes(y = sensitivity, color = "Sensitivity")) +
-  geom_line(aes(y = specificity, color = "Specificity")) +
-  labs(title = "Sensitivity and Specificity vs Threshold",
-       x = "Threshold",
-       y = "Value") +
-  theme_minimal() +
-  scale_color_manual(name = "Metric", values = c("Sensitivity" = "blue", "Specificity" = "red"))
-```
-
 **Cross Validation to choose the threshold**
+
+This code performs an analysis to determine the optimal classification threshold for a binary classification model, using cross-validation to evaluate performance across multiple metrics. Here’s a breakdown of the process:
+
+1.  **Define Thresholds**:
+    -   A sequence of thresholds (0 to 1 in steps of 0.01) is defined to evaluate model predictions.
+2.  **Metrics Calculation**:
+    -   For each threshold, predicted probabilities (`predicted_prob`) are converted into binary predictions (`predicted_class`) based on whether they exceed the threshold.
+    -   A confusion matrix is generated for the predictions to calculate key metrics:
+        -   **Accuracy**: Overall correctness.
+        -   **Precision**: Correct positive predictions among all positive predictions.
+        -   **Recall**: Correct positive predictions among all actual positives.
+        -   **F1 Score**: Harmonic mean of precision and recall.
+3.  **Cross-Validation Results**:
+    -   The calculated metrics are stored in a dataframe (`cv_results`) for all thresholds.
+4.  **Optimal Threshold**:
+    -   The threshold maximizing a chosen metric (e.g., F1 Score) is identified and printed as the optimal threshold.
+5.  **Visualization**:
+    -   Metrics are plotted against thresholds using a line plot, showing how each metric varies with the threshold.
+
+This approach ensures the model's classification threshold is tuned to balance the trade-offs between precision, recall, and other performance measures, aligning with the specific objectives of the analysis.
 
 ```{r}
 # Define a sequence of thresholds to test
@@ -737,11 +739,25 @@ print("Confusion Matrix at Optimal Threshold:")
 print(confusion_matrix_optimal)
 ```
 
-## Task 3:
+## **Time Series Cross-Validation**
 
-Classic **K-fold Cross-Validation** randomly splits the data into k folds, which is appropriate for independent and identically distributed (i.i.d.) data. However, time series data like yours (structured as firm-year observations) often exhibits **temporal dependency**: outcomes in one period can depend on past periods. Random splits would violate the temporal ordering and could lead to **data leakage**, where future information influences training.
+This code implements a **Time Series Cross-Validation (Walk Forward Scheme)** to evaluate the performance of a logistic regression model for predicting a bankruptcy. The process respects the temporal structure of the data to avoid data leakage by ensuring that future observations are not used for training.
 
-Instead, **Time Series Cross-Validation (Walk Forward Validation)** respects the temporal structure by ensuring that each training set includes only observations up to the prediction period. This method simulates a real-world scenario where only past data is available for forecasting.
+**Steps:**
+
+1.  **Prepare and Sort Data**:
+    -   The dataset is ordered by firm identifier (`gvkey`) and year (`fyear`) to preserve the chronological order.
+2.  **Define Cross-Validation Splits**:
+    -   A custom function creates training and testing indices for a walk-forward validation approach, splitting the data into 5 folds.
+3.  **Model Training and Testing**:
+    -   For each fold:
+        -   The model is trained on past data and tested on future data within the defined fold.
+        -   Logistic regression is used with financial variables as predictors.
+4.  **Performance Evaluation**:
+    -   Predictions are evaluated using metrics like accuracy and Area Under the ROC Curve (AUC) to measure classification performance.
+    -   Confusion matrices and ROC curves provide additional insights into the model's predictive ability.
+
+This approach ensures robust and time-consistent model validation, simulating real-world scenarios where only past data is available to predict future outcomes.
 
 ```{r}
 # Step 1: Prepare data
@@ -769,7 +785,9 @@ time_series_cv <- function(data, n_splits) {
   }
   indices
 }
+```
 
+```{r}
 # Create 5 splits for time series CV
 n_splits <- 5
 cv_indices <- time_series_cv(data, n_splits)
@@ -825,6 +843,12 @@ cat("Walk Forward Validation Results:\n")
 cat("Average Accuracy:", round(mean(accuracy_list), 4), "\n")
 cat("Average AUC:", round(mean(auc_list), 4), "\n")
 ```
+
+**Walk Forward Validation Results Interpretation**
+
+The model achieved an **average accuracy of 99.57%**, indicating that it correctly classified nearly all observations in the test sets. However, the **average AUC of 0.7879** suggests moderate discriminatory power, meaning the model performs reasonably well in distinguishing between the two classes but leaves room for improvement.
+
+This discrepancy between accuracy and AUC highlights that while the model predicts the majority class well, it might struggle with imbalanced data or correctly classifying the minority class.
 
 ```{r}
 # Plot the last ROC curve as an example

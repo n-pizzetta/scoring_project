@@ -1,7 +1,23 @@
 ---
-title: "practical1_task2"
-format: html
-editor: visual
+title: "Project - Part 2"
+subtitle: "Scoring, M2 Data Science for Social Sciences"
+author: "Théo Druilhe, Pierre Larose, Nathan Pizzetta, Sigurd Saue"
+format: 
+  html:
+    theme: 
+       light: cerulean
+    code-fold: true
+    warning: false
+    message: false
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    self-contained: true
+    code-tools:
+      source: true
+editor: 
+    markdown: 
+       wrap: sentence
 ---
 
 ```{r}
@@ -210,7 +226,8 @@ print(duplicates_count_data)
 str(data)
 ```
 
-We adopt Shumway's approach to handle extreme values, ensuring the data remains robust and well-distributed. Specifically:
+We adopt Shumway's approach to handle extreme values, ensuring the data remains robust and well-distributed.
+Specifically:
 
 1.  Values exceeding the 99th percentile of each variable are capped at the 99th percentile value.
 2.  Values falling below the 1st percentile of each variable are floored at the 1st percentile value.
@@ -408,11 +425,13 @@ summary(data$net_profit_margin)
 
 #### Imputation
 
-**MICE with Predictive Mean Matching (PMM)** is a robust method for handling missing data. MICE iteratively imputes missing values by modeling each variable conditionally on others.
+**MICE with Predictive Mean Matching (PMM)** is a robust method for handling missing data.
+MICE iteratively imputes missing values by modeling each variable conditionally on others.
 
 **PMM** predicts missing values using regression and replaces them with observed values closest to the prediction, ensuring realistic imputations that respect the original data distribution.
 
-With `m = 5`, multiple datasets are generated to account for imputation uncertainty, and `seed = 123` ensures reproducibility. This approach reduces bias, preserves variability, and produces reliable analyses by addressing missing data effectively.
+With `m = 5`, multiple datasets are generated to account for imputation uncertainty, and `seed = 123` ensures reproducibility.
+This approach reduces bias, preserves variability, and produces reliable analyses by addressing missing data effectively.
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Imputation avec mice
@@ -449,9 +468,12 @@ We have almost 3% of company that have bankrupted
 
 **Survival Analysis in Bankruptcy Scoring**
 
-Survival analysis is a statistical approach to predict the time to an event, such as a company's bankruptcy. The **Cox Proportional Hazards Model** is used to evaluate the relationship between financial ratios and the hazard of bankruptcy. This model estimates how variables like profitability (e.g., ROA, ROE), leverage (e.g., debt-to-equity, debt ratio), and efficiency (e.g., asset turnover) impact the likelihood of bankruptcy over time.
+Survival analysis is a statistical approach to predict the time to an event, such as a company's bankruptcy.
+The **Cox Proportional Hazards Model** is used to evaluate the relationship between financial ratios and the hazard of bankruptcy.
+This model estimates how variables like profitability (e.g., ROA, ROE), leverage (e.g., debt-to-equity, debt ratio), and efficiency (e.g., asset turnover) impact the likelihood of bankruptcy over time.
 
-In the code, the model is fitted with financial variables as predictors and time-to-bankruptcy as the survival outcome. The results reveal the significant factors influencing the bankruptcy risk.
+In the code, the model is fitted with financial variables as predictors and time-to-bankruptcy as the survival outcome.
+The results reveal the significant factors influencing the bankruptcy risk.
 
 Create time and status variables
 
@@ -544,7 +566,8 @@ logistic_model <- glm(formula, data = df, family = binomial)
 summary(logistic_model)
 ```
 
-The logistic regression model evaluates the relationship between financial variables and the probability of bankruptcy. Key results:
+The logistic regression model evaluates the relationship between financial variables and the probability of bankruptcy.
+Key results:
 
 -   **Significant Predictors**:
 
@@ -655,7 +678,8 @@ auc(roc_curve)
 
 **Cross Validation to choose the threshold**
 
-This code performs an analysis to determine the optimal classification threshold for a binary classification model, using cross-validation to evaluate performance across multiple metrics. Here’s a breakdown of the process:
+This code performs an analysis to determine the optimal classification threshold for a binary classification model, using cross-validation to evaluate performance across multiple metrics.
+Here’s a breakdown of the process:
 
 1.  **Define Thresholds**:
     -   A sequence of thresholds (0 to 1 in steps of 0.01) is defined to evaluate model predictions.
@@ -739,9 +763,10 @@ print("Confusion Matrix at Optimal Threshold:")
 print(confusion_matrix_optimal)
 ```
 
-## **Time Series Cross-Validation**
+## Time Series Cross-Validation
 
-This code implements a **Time Series Cross-Validation (Walk Forward Scheme)** to evaluate the performance of a logistic regression model for predicting a bankruptcy. The process respects the temporal structure of the data to avoid data leakage by ensuring that future observations are not used for training.
+This code implements a **Time Series Cross-Validation (Walk Forward Scheme)** to evaluate the performance of a logistic regression model for predicting a bankruptcy.
+The process respects the temporal structure of the data to avoid data leakage by ensuring that future observations are not used for training.
 
 **Steps:**
 
@@ -846,7 +871,8 @@ cat("Average AUC:", round(mean(auc_list), 4), "\n")
 
 **Walk Forward Validation Results Interpretation**
 
-The model achieved an **average accuracy of 99.57%**, indicating that it correctly classified nearly all observations in the test sets. However, the **average AUC of 0.7879** suggests moderate discriminatory power, meaning the model performs reasonably well in distinguishing between the two classes but leaves room for improvement.
+The model achieved an **average accuracy of 99.57%**, indicating that it correctly classified nearly all observations in the test sets.
+However, the **average AUC of 0.7879** suggests moderate discriminatory power, meaning the model performs reasonably well in distinguishing between the two classes but leaves room for improvement.
 
 This discrepancy between accuracy and AUC highlights that while the model predicts the majority class well, it might struggle with imbalanced data or correctly classifying the minority class.
 
